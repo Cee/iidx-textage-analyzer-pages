@@ -10,51 +10,51 @@
   ];
 
   const LAMP_META = {
-    'NO PLAY':         { rank: 0, short: 'NP',   label: 'NO PLAY',       color: '#475569', bg: 'rgba(71,85,105,0.18)',   clearVal: null },
-    'FAILED':          { rank: 1, short: 'F',    label: 'FAILED',        color: '#ef4444', bg: 'rgba(239,68,68,0.16)',   clearVal: 0.0 },
-    'ASSIST CLEAR':    { rank: 2, short: 'AC',   label: 'ASSIST CLEAR',  color: '#c084fc', bg: 'rgba(192,132,252,0.18)', clearVal: 0.30 },
-    'EASY CLEAR':      { rank: 3, short: 'EC',   label: 'EASY CLEAR',    color: '#4ade80', bg: 'rgba(74,222,128,0.18)',  clearVal: 0.62 },
-    'CLEAR':           { rank: 4, short: 'NC',   label: 'CLEAR',         color: '#38bdf8', bg: 'rgba(56,189,248,0.18)',  clearVal: 1.0 },
-    'HARD CLEAR':      { rank: 5, short: 'HC',   label: 'HARD CLEAR',    color: '#f87171', bg: 'rgba(248,113,113,0.22)', clearVal: 1.15 },
-    'EX HARD CLEAR':   { rank: 6, short: 'EXHC', label: 'EX HARD CLEAR', color: '#facc15', bg: 'rgba(250,204,21,0.20)',  clearVal: 1.25 },
-    'FULLCOMBO CLEAR': { rank: 7, short: 'FC',   label: 'FULLCOMBO',     color: '#22d3ee', bg: 'rgba(34,211,238,0.22)',  clearVal: 1.32 },
+    'NO PLAY':         { rank: 0, key: 'np',   short: 'NP',   label: 'NO PLAY',       color: '#64748b', bg: 'rgba(100,116,139,0.16)', clearVal: null },
+    'FAILED':          { rank: 1, key: 'f',    short: 'F',    label: 'FAILED',        color: '#94a3b8', bg: 'rgba(148,163,184,0.18)', clearVal: 0.0 },
+    'ASSIST CLEAR':    { rank: 2, key: 'ac',   short: 'AC',   label: 'ASSIST CLEAR',  color: '#c084fc', bg: 'rgba(192,132,252,0.18)', clearVal: 0.30 },
+    'EASY CLEAR':      { rank: 3, key: 'ec',   short: 'EC',   label: 'EASY CLEAR',    color: '#4ade80', bg: 'rgba(74,222,128,0.18)',  clearVal: 0.62 },
+    'CLEAR':           { rank: 4, key: 'nc',   short: 'NC',   label: 'CLEAR',         color: '#38bdf8', bg: 'rgba(56,189,248,0.18)',  clearVal: 1.0 },
+    'HARD CLEAR':      { rank: 5, key: 'hc',   short: 'HC',   label: 'HARD CLEAR',    color: '#38bdf8', bg: 'rgba(56,189,248,0.16)',  clearVal: 1.15 },
+    'EX HARD CLEAR':   { rank: 6, key: 'exhc', short: 'EXHC', label: 'EX HARD CLEAR', color: '#facc15', bg: 'rgba(250,204,21,0.16)',  clearVal: 1.25 },
+    'FULLCOMBO CLEAR': { rank: 7, key: 'fc',   short: 'FC',   label: 'FULLCOMBO',     color: '#f8fafc', bg: 'rgba(248,250,252,0.18)', clearVal: 1.32 },
   };
 
   const AXIS_COACH = {
     sp: [
       {
         name: '乱打/高速',
-        short: '乱打高速',
+        short: '乱打/高速',
         tip: '优先用 RANDOM 打中高速 16 分乱打与二重乱打，保持手腕放松与小振幅击键；关注绿字视野（建议 270–310），避免高 BPM 下提前发力导致整体推快。',
         optTip: '优先 RANDOM（拆固定指法，建立通用读谱）',
       },
       {
         name: '階段/指独立',
-        short: '阶段指独立',
+        short: '阶段/指独立',
         tip: '交替使用 正規 / MIRROR / R-RANDOM 均衡左右手，针对弱侧无名指与小指做刻意独立击键；遇到连续 16 分折返阶段时先控低速准确度再提速。',
         optTip: '正規 / MIRROR 交替 + R-RANDOM',
       },
       {
         name: '物量/体力',
-        short: '物量体力',
+        short: '物量/体力',
         tip: '刻意练习 1,000+ Notes 持续密集段，减少无谓拍键力度（降噪轻打），中段学会借低密小节快速松肩换气，确保尾段手速不衰减。',
         optTip: 'RANDOM 均分双手指压',
       },
       {
         name: '認識/ズレ',
-        short: '认识错拍',
+        short: '认识/错拍',
         tip: '针对非整数分音、错位双押与高熵配置，重点用“听音乐节拍 + 块状横认识”代替逐个看键；可适度把 SUDDEN+ / LIFT 调稳，避免视线追尾。',
         optTip: '正規 / MIRROR 或 RANDOM 强化横认识',
       },
       {
         name: '縦連/軸',
-        short: '纵连轴谱',
+        short: '纵连/轴谱',
         tip: '单键轴与微纵连重在手腕弹性而非纯手指硬敲；练习时可先用 RANDOM 把固定轴打散培养对高速单键的节拍感，再回正規/MIRROR 攻坚固定轴。',
         optTip: '拆轴开 RANDOM；固定练习用 正規/MIRROR',
       },
       {
         name: '皿/皿複合',
-        short: '连皿皿复合',
+        short: '皿/皿复合',
         tip: '明确 1048 / 小指皿 / 対称固定等皿手型切换，看皿时把连皿按“推-拉-推”偶奇数拍分组，切忌靠感觉乱搓引发空 POOR 连锁与 BAD 锁定。',
         optTip: '正規或 MIRROR（让皿侧键位更顺手）',
       },
@@ -66,15 +66,15 @@
       },
       {
         name: 'ソフラン',
-        short: '变速齿轮',
-        tip: '提前在 Textage 记好变速小节与高低速比例，熟练使用空白处 皿チョン (FHS) 或针对主力段定绿字，低速段配合 LIFT/白字切视野避免键位糊成一团。',
+        short: '变速(ソフラン)',
+        tip: '提前在 Textage 记好 BPM 变速小节与高低速比例，熟练使用空白处 皿チョン (FHS) 或针对主力段定绿字，低速段配合 LIFT/白字切视野避免键位糊成一团。',
         optTip: '正規/MIRROR（方便背板变速点）',
       },
     ],
     dp: [
       {
         name: '片手力/复用',
-        short: '片手复用',
+        short: '片手/复用',
         tip: '针对单侧高速与同指复用，减少无名指/小指盲目硬顶，主动利用 HomePo 拇指/食指覆盖与 1M/2M 把难手型换到惯用手或更顺手的内外侧。',
         optTip: '善用 FLIP / 1M / 2M 把高频侧给优势手',
       },
@@ -86,13 +86,13 @@
       },
       {
         name: '認識/左右振り',
-        short: '认识左右振',
+        short: '认识/左右振',
         tip: '强化 14 键整体横认识（把视线锚定在 P1/P2 中缝而非左右来回扫视），遇到大幅左右振り时借助对称镜像（1M/2M）把平行配置转为对称配置。',
         optTip: '1M / 2M / M/M（平行转对称极有效）',
       },
       {
         name: '無理押し/移動',
-        short: '无理押移动',
+        short: '无理押/移动',
         tip: '对 1+7 等大跨度与片手远距离移动，提前规划手掌平移支点与 HomePo 定位，若正規含过多無理押し，果断切换 R-RANDOM 或单侧 RANDOM 化解。',
         optTip: 'R-RANDOM / RANDOM 规避固定無理押し',
       },
@@ -104,7 +104,7 @@
       },
       {
         name: '着地/皿',
-        short: '着地双皿',
+        short: '着地/双皿',
         tip: '强化“回盘着地”肌肉记忆：打完皿后第一时间用小指/拇指锚定内侧键，提前判断相邻键+皿的無理皿位置，避免连带误触。',
         optTip: 'FLIP 或 单侧 MIRROR 避开無理皿',
       },
@@ -116,8 +116,8 @@
       },
       {
         name: 'ソフラン',
-        short: '变速齿轮',
-        tip: 'DP 下变速更考验记忆与单手调速能力，提前确认空白小节位置使用皿チョン，或根据主要发狂段 BPM 设定主绿字。',
+        short: '变速(ソフラン)',
+        tip: 'DP 下 BPM 变速更考验记忆与单手调速能力，提前确认空白小节位置使用皿チョン，或根据主要发狂段 BPM 设定主绿字。',
         optTip: '正規 / FLIP 固定背板',
       },
     ],
@@ -727,10 +727,20 @@
       });
     }
 
-    // 2. Fit 4-Gauge Clear Power (IRT, with gauge-selection censoring awareness for HC / EXHC)
+    // 2. Fit 4-Gauge Clear Power (IRT, with carryover stale-fail & gauge-selection censoring awareness)
     const tauByMode = mode === 'dp' ? 3.8 : 3.2;
-    const ecSamples = played.map((r) => ({ s: r.chart.s_ec, y: r.lampRank >= 3 ? 1 : 0, w: 1 }));
-    const ncSamples = played.map((r) => ({ s: r.chart.s_nc, y: r.lampRank >= 4 ? 1 : 0, w: 1 }));
+    const currentPlayCount = played.filter((r) => !r.isCarryover).length;
+    const hasCurrentData = currentPlayCount >= 15;
+    const carryoverBaseW = (r) => {
+      if (!hasCurrentData || !r.isCarryover) return 1.0;
+      if (r.lampRank === 1) return 0.16; // Stale previous-version FAILED (never replayed this version)
+      if (r.lampRank === 2) return 0.32; // Stale previous-version ASSIST
+      if (r.lampRank === 3) return 0.55; // Previous-version EC
+      return 0.72; // Previous-version NC+ clear (still real historical pass, lighter than current plays)
+    };
+
+    const ecSamples = played.map((r) => ({ s: r.chart.s_ec, y: r.lampRank >= 3 ? 1 : 0, w: carryoverBaseW(r) }));
+    const ncSamples = played.map((r) => ({ s: r.chart.s_nc, y: r.lampRank >= 4 ? 1 : 0, w: carryoverBaseW(r) }));
 
     const ncPosCount = played.filter((r) => r.lampRank >= 4).length;
     const hcPos = played.filter((r) => r.lampRank >= 5);
@@ -742,10 +752,10 @@
     let hcNote = '';
     if (hcAttemptRatio >= 0.42) {
       // Regular HARD-gauge player: standard IRT across played pool
-      hcSamples = played.map((r) => ({ s: r.chart.s_hc, y: r.lampRank >= 5 ? 1 : 0, w: 1 }));
+      hcSamples = played.map((r) => ({ s: r.chart.s_hc, y: r.lampRank >= 5 ? 1 : 0, w: carryoverBaseW(r) }));
     } else {
       // Normal-gauge-primary player: avoid penalizing unattempted blue lamps as HARD fails!
-      hcNote = '平时以 NC 为主，按已红灯与未过关谱面估算';
+      hcNote = '平时以 NC 为主，按已 HC 与未过关谱面估算';
       const hcSorted = [...hcPos].map((r) => r.chart.s_hc).sort((a, b) => a - b);
       const hcUpperRef = hcSorted.length ? hcSorted[Math.floor(hcSorted.length * 0.75)] : 0;
       hcSamples = played
@@ -753,16 +763,16 @@
         .map((r) => ({
           s: r.chart.s_hc,
           y: r.lampRank >= 5 ? 1 : 0,
-          w: r.lampRank >= 5 ? 1.0 : (r.lampRank === 1 ? 0.85 : (r.lampRank <= 3 ? 0.55 : 0.25)),
+          w: carryoverBaseW(r) * (r.lampRank >= 5 ? 1.0 : (r.lampRank === 1 ? 0.85 : (r.lampRank <= 3 ? 0.55 : 0.25))),
         }));
     }
 
     let exSamples;
     let exNote = '';
     if (exAttemptRatio >= 0.32) {
-      exSamples = played.map((r) => ({ s: r.chart.s_exhc, y: r.lampRank >= 6 ? 1 : 0, w: 1 }));
+      exSamples = played.map((r) => ({ s: r.chart.s_exhc, y: r.lampRank >= 6 ? 1 : 0, w: carryoverBaseW(r) }));
     } else {
-      exNote = '按已黄灯/FC 与未过关谱面估算';
+      exNote = '按已 EXHC/FC 与未过关谱面估算';
       const exSorted = [...exPos].map((r) => r.chart.s_exhc).sort((a, b) => a - b);
       const exUpperRef = exSorted.length ? exSorted[Math.floor(exSorted.length * 0.75)] : 0;
       exSamples = played
@@ -770,7 +780,7 @@
         .map((r) => ({
           s: r.chart.s_exhc,
           y: r.lampRank >= 6 ? 1 : 0,
-          w: r.lampRank >= 6 ? 1.0 : (r.lampRank === 1 ? 0.85 : (r.lampRank <= 3 ? 0.50 : 0.22)),
+          w: carryoverBaseW(r) * (r.lampRank >= 6 ? 1.0 : (r.lampRank === 1 ? 0.85 : (r.lampRank <= 3 ? 0.50 : 0.22))),
         }));
     }
 
@@ -788,7 +798,7 @@
       }
     }
 
-    // Determine primary anchor theta & active focus levels
+    // Determine primary anchor theta & active focus levels (favoring current-version plays when available)
     const ncTheta = irt.nc?.theta ?? irt.ec?.theta ?? (
       played.length ? played.reduce((a, r) => a + r.chart.s_nc, 0) / played.length : 25
     );
@@ -798,8 +808,16 @@
     const activeCandidates = levelSummary
       .filter((l) => l.played >= 5)
       .map((l) => {
-        const mixScore = 1 - Math.abs(l.ncRate - 0.52) * 1.4;
-        return { lv: l.lv, score: l.played * (0.45 + Math.max(0, mixScore)) };
+        const lvRecs = played.filter((r) => r.chart.lv === l.lv);
+        let effN = 0, effNc = 0;
+        for (const r of lvRecs) {
+          const w = !hasCurrentData || !r.isCarryover ? 1.0 : 0.35;
+          effN += w;
+          if (r.lampRank >= 4) effNc += w;
+        }
+        const effNcRate = effN > 0 ? effNc / effN : l.ncRate;
+        const mixScore = 1 - Math.abs(effNcRate - 0.52) * 1.4;
+        return { lv: l.lv, score: effN * (0.45 + Math.max(0, mixScore)) };
       })
       .sort((a, b) => b.score - a.score);
 
@@ -809,24 +827,42 @@
       primaryLevel,
       Math.min(12, primaryLevel + 1),
     ].filter((v, i, arr) => arr.indexOf(v) === i);
+    const focusMin = focusLevels[0];
+    const focusMax = focusLevels[focusLevels.length - 1];
+    const focusSet = new Set(focusLevels);
 
-    // 3. Frontier-Weighted Clear, EX% & BP% Baselines (2-pass so trivial low-level clears don't skew frontier residuals!)
+    const levelFocusWeight = (lv) => {
+      if (focusSet.has(lv)) return 1.0;
+      const distOut = lv < focusMin ? (focusMin - lv) : (lv - focusMax);
+      if (distOut === 1) return 0.25; // e.g., ★7 or ★11 when active range is ★8–★10
+      return 0.10; // e.g., ≤★6 or ★12 when active range is ★8–★10
+    };
+
+    const carryoverAnalysisWeight = (r) => {
+      if (!hasCurrentData || !r.isCarryover) return 1.0;
+      if (r.lampRank === 1) return 0.14; // Likely stale old-version FAILED
+      if (r.lampRank === 2) return 0.28; // Old-version ASSIST
+      return 0.55; // Old-version EC/NC/HC/EXHC/FC
+    };
+
+    // 3. Frontier + Focus-Level + Carryover Weighted Clear, EX% & BP% Baselines (2-pass)
     const prelimSoft = played.map((r) => {
       const ySoft = r.lampRank >= 4 ? 1.0 : (r.lampRank === 3 ? 0.62 : (r.lampRank === 2 ? 0.30 : 0.0));
-      return { s: r.chart.s_nc, y: ySoft, w: 1 };
+      return { s: r.chart.s_nc, y: ySoft, w: carryoverBaseW(r) };
     });
     const prelimTheta = fitIrtTheta(prelimSoft, tauByMode)?.theta ?? ncTheta;
 
     const calcInfoW = (r, refTheta) => {
       const p = sigmoid((refTheta - r.chart.s_nc) / tauByMode);
       const dist = Math.abs(r.chart.s_nc - refTheta);
-      if (p > 0.96 && r.lampRank >= 4) return 0.20;
-      if (p < 0.04 && r.lampRank <= 1) return 0.25;
-      if (dist > 14) return 0.45;
-      return 1.0;
+      let frontierW = 1.0;
+      if (p > 0.96 && r.lampRank >= 4) frontierW = 0.25;
+      else if (p < 0.04 && r.lampRank <= 1) frontierW = 0.25;
+      else if (dist > 14) frontierW = 0.50;
+      return frontierW * levelFocusWeight(r.chart.lv) * carryoverAnalysisWeight(r);
     };
 
-    // Pass 2: Refit soft clear curve, NC curve, EX baseline & BP baseline with frontier weights
+    // Pass 2: Refit soft clear curve, NC curve, EX baseline & BP baseline with frontier + focus + carryover weights
     const weightedSoft = played.map((r) => ({
       s: r.chart.s_nc,
       y: r.lampRank >= 4 ? 1.0 : (r.lampRank === 3 ? 0.62 : (r.lampRank === 2 ? 0.30 : 0.0)),
@@ -896,6 +932,7 @@
         rBp,
         perfResid,
         infoW,
+        inFocus: focusSet.has(c.lv),
         zRadar,
         primaryBpm: parsePrimaryBpm(c.bpm),
       };
@@ -907,7 +944,7 @@
     const globalOffset = totW > 0 ? totR / totW : 0;
     for (const r of enriched) r.perfResidCentered = r.perfResid - globalOffset;
 
-    // 4. 8-Axis Relative Strength & Weakness Decomposition (High-Axis vs Complementary Baseline!)
+    // 4. 8-Axis Relative Strength & Weakness Decomposition (Focus-Level & Current-Version Weighted!)
     const rawAxes = [];
     for (let d = 0; d < 8; d++) {
       let thresh = 0.55;
@@ -919,19 +956,21 @@
       const subsetSet = new Set(subset);
       const comp = enriched.filter((r) => !subsetSet.has(r));
 
-      let wSum = 0, resSum = 0, actNcSum = 0, expNcSum = 0;
-      let exCnt = 0, rExSum = 0, exAbsSum = 0;
-      let bpCnt = 0, rBpSum = 0, bpAbsSum = 0;
+      let wSum = 0, infoWSum = 0, focusN = 0, resSum = 0, actNcSum = 0, expNcSum = 0;
+      let exWSum = 0, rExSum = 0, exAbsSum = 0;
+      let bpWSum = 0, rBpSum = 0, bpAbsSum = 0;
 
       for (const r of subset) {
         const zW = Math.min(2.4, Math.max(0.5, r.zRadar[d]));
         const w = r.infoW * zW;
         wSum += w;
+        infoWSum += r.infoW;
+        if (r.inFocus) focusN++;
         resSum += w * r.perfResidCentered;
         actNcSum += w * (r.lampRank >= 4 ? 1 : 0);
         expNcSum += w * r.pNc;
-        if (r.rEx !== null) { exCnt++; rExSum += r.rEx; exAbsSum += r.exRate; }
-        if (r.rBp !== null) { bpCnt++; rBpSum += r.rBp; bpAbsSum += r.bpRate; }
+        if (r.rEx !== null) { exWSum += w; rExSum += w * r.rEx; exAbsSum += w * r.exRate; }
+        if (r.rBp !== null) { bpWSum += w; rBpSum += w * r.rBp; bpAbsSum += w * r.bpRate; }
       }
 
       let compW = 0, compRes = 0;
@@ -949,22 +988,24 @@
         d,
         subset,
         n,
+        focusN,
+        infoWSum,
         wSum,
         contrast,
         actualNcPct: wSum > 0 ? (actNcSum / wSum) * 100 : null,
         expectedNcPct: wSum > 0 ? (expNcSum / wSum) * 100 : null,
-        avgExPct: exCnt > 0 ? (exAbsSum / exCnt) * 100 : null,
-        deltaExPct: exCnt > 0 ? (rExSum / exCnt) * 100 : null,
-        avgBpPct: bpCnt > 0 ? (bpAbsSum / bpCnt) * 100 : null,
-        deltaBpPct: bpCnt > 0 ? (rBpSum / bpCnt) * 100 : null,
+        avgExPct: exWSum > 0 ? (exAbsSum / exWSum) * 100 : null,
+        deltaExPct: exWSum > 0 ? (rExSum / exWSum) * 100 : null,
+        avgBpPct: bpWSum > 0 ? (bpAbsSum / bpWSum) * 100 : null,
+        deltaBpPct: bpWSum > 0 ? (rBpSum / bpWSum) * 100 : null,
       });
     }
 
-    // Center across the 8 axes by their sample-weighted mean so relative strengths (+) and weaknesses (-) are balanced and crisp!
+    // Center across the 8 axes by their effective sample weight so relative strengths (+) and weaknesses (-) are balanced!
     let axW = 0, axC = 0;
     for (const a of rawAxes) {
-      if (a.n >= 3) {
-        const w = Math.min(40, a.n);
+      if (a.n >= 3 && a.infoWSum > 0.4) {
+        const w = Math.min(35, a.infoWSum);
         axW += w;
         axC += w * a.contrast;
       }
@@ -974,22 +1015,40 @@
     const axisAnalysis = rawAxes.map((a) => {
       const d = a.d;
       const relContrast = a.contrast - meanAxisContrast;
-      const shrink = a.n / (a.n + 4.5);
+      const shrink = a.infoWSum / (a.infoWSum + 3.5);
       const strengthIndex = Math.round(Math.max(-100, Math.min(100, relContrast * shrink * 175)));
       const deltaNcPct = (a.actualNcPct !== null && a.expectedNcPct !== null) ? (a.actualNcPct - a.expectedNcPct) : null;
 
+      // Example relevance multiplier: strongly prefer active focus levels & current-version plays over out-of-range / carryover fails
+      const exRel = (r) => {
+        const lvMul = r.inFocus ? 1.0 : (Math.min(Math.abs(r.chart.lv - focusMin), Math.abs(r.chart.lv - focusMax)) === 1 ? 0.16 : 0.05);
+        const carryMul = (!hasCurrentData || !r.isCarryover) ? 1.0 : (r.lampRank === 1 ? 0.08 : (r.lampRank === 2 ? 0.20 : 0.45));
+        return lvMul * carryMul * Math.min(2.2, Math.max(0.5, r.zRadar[d]));
+      };
+
+      const hiScore = (r) => {
+        const rel = exRel(r);
+        const val = r.perfResidCentered;
+        return val >= 0 ? val * rel : val / Math.max(0.05, rel);
+      };
+      const loScore = (r) => {
+        const rel = exRel(r);
+        const bad = -r.perfResidCentered;
+        return bad >= 0 ? bad * rel : bad / Math.max(0.05, rel);
+      };
+
       const highlights = [...a.subset]
         .filter((r) => r.lampRank >= 3)
-        .sort((x, y) => (y.perfResidCentered * Math.max(0.5, y.zRadar[d])) - (x.perfResidCentered * Math.max(0.5, x.zRadar[d])))
+        .sort((x, y) => hiScore(y) - hiScore(x))
         .slice(0, 3);
 
-      const struggles = [...a.subset]
-        .filter((r) => r.lampRank <= 3)
-        .sort((x, y) => (x.perfResidCentered * Math.max(0.5, x.zRadar[d])) - (y.perfResidCentered * Math.max(0.5, y.zRadar[d])))
+      const strugglePool = a.subset.filter((r) => r.lampRank <= 3 && r.perfResidCentered < 0.05);
+      const struggles = [...(strugglePool.length ? strugglePool : a.subset.filter((r) => r.lampRank <= 2))]
+        .sort((x, y) => loScore(y) - loScore(x))
         .slice(0, 3);
 
       let verdict = '均衡';
-      if (a.n < 3) verdict = '样本较少';
+      if (a.n < 3 || a.infoWSum < 1.2) verdict = '样本较少';
       else if (strengthIndex >= 12) verdict = '明显擅长';
       else if (strengthIndex >= 4) verdict = '略占优势';
       else if (strengthIndex <= -12) verdict = '重点短板';
@@ -1003,7 +1062,9 @@
         tip: axisMeta[d].tip,
         optTip: axisMeta[d].optTip,
         n: a.n,
-        confidence: a.n >= 12 ? '高' : (a.n >= 5 ? '中' : '低'),
+        focusN: a.focusN,
+        effN: Math.round(a.infoWSum * 10) / 10,
+        confidence: a.infoWSum >= 8 ? '高' : (a.infoWSum >= 3 ? '中' : '低'),
         strengthIndex,
         radarPlotVal: Math.max(10, Math.min(100, Math.round(52 + strengthIndex * 0.48))),
         actualNcPct: a.actualNcPct,
@@ -1021,17 +1082,17 @@
 
     // 5. Pattern Tag, 地力 vs 個人差, BPM Band, Notes Stamina & Structural Analysis
     function summarizeBucket(label, items) {
-      let wSum = 0, resSum = 0, actNc = 0, expNc = 0, exN = 0, exSum = 0, bpN = 0, bpSum = 0;
+      let wSum = 0, resSum = 0, actNc = 0, expNc = 0, exW = 0, exSum = 0, bpW = 0, bpSum = 0;
       for (const r of items) {
         wSum += r.infoW;
         resSum += r.infoW * r.perfResidCentered;
         actNc += r.infoW * (r.lampRank >= 4 ? 1 : 0);
         expNc += r.infoW * r.pNc;
-        if (r.exRate !== null) { exN++; exSum += r.exRate; }
-        if (r.bpRate !== null) { bpN++; bpSum += r.bpRate; }
+        if (r.exRate !== null) { exW += r.infoW; exSum += r.infoW * r.exRate; }
+        if (r.bpRate !== null) { bpW += r.infoW; bpSum += r.infoW * r.bpRate; }
       }
       const n = items.length;
-      const shrink = n / (n + 4);
+      const shrink = wSum / (wSum + 3.0);
       const score = wSum > 0 ? Math.round(Math.max(-100, Math.min(100, (resSum / wSum) * shrink * 165))) : 0;
       const actualNcPct = wSum > 0 ? (actNc / wSum) * 100 : 0;
       const expectedNcPct = wSum > 0 ? (expNc / wSum) * 100 : 0;
@@ -1042,8 +1103,8 @@
         actualNcPct,
         expectedNcPct,
         deltaNcPct: actualNcPct - expectedNcPct,
-        avgExPct: exN > 0 ? (exSum / exN) * 100 : null,
-        avgBpPct: bpN > 0 ? (bpSum / bpN) * 100 : null,
+        avgExPct: exW > 0 ? (exSum / exW) * 100 : null,
+        avgBpPct: bpW > 0 ? (bpSum / bpW) * 100 : null,
       };
     }
 
@@ -1096,21 +1157,21 @@
       .sort()
       .pop() || '—';
 
-    const reliableAxes = axisAnalysis.filter((a) => a.n >= 3);
+    const reliableAxes = axisAnalysis.filter((a) => a.n >= 3 && a.effN >= 1.2);
     const sortedBest = [...reliableAxes].sort((a, b) => b.strengthIndex - a.strengthIndex);
     const sortedWeak = [...reliableAxes].sort((a, b) => a.strengthIndex - b.strengthIndex);
     const topStrengths = sortedBest.filter((a) => a.strengthIndex >= 4).slice(0, 3);
     const topWeaknesses = sortedWeak.filter((a) => a.strengthIndex <= -4).slice(0, 3);
     const coachWeakAxes = topWeaknesses.length >= 2 ? topWeaknesses : sortedWeak.slice(0, 3);
 
-    const topOverperform = [...enriched]
-      .filter((r) => r.lampRank >= 4 && r.infoW >= 0.4)
-      .sort((a, b) => b.perfResidCentered - a.perfResidCentered)
+    const overPool = enriched.filter((r) => r.lampRank >= 4 && r.infoW >= 0.35);
+    const topOverperform = [...(overPool.length >= 5 ? overPool : enriched.filter((r) => r.lampRank >= 4))]
+      .sort((a, b) => (b.perfResidCentered * Math.sqrt(b.infoW)) - (a.perfResidCentered * Math.sqrt(a.infoW)))
       .slice(0, 10);
 
-    const topUnderperform = [...enriched]
-      .filter((r) => r.lampRank <= 3 && r.infoW >= 0.4)
-      .sort((a, b) => a.perfResidCentered - b.perfResidCentered)
+    const underPool = enriched.filter((r) => r.lampRank <= 3 && r.infoW >= 0.35 && r.perfResidCentered < 0);
+    const topUnderperform = [...(underPool.length >= 5 ? underPool : enriched.filter((r) => r.lampRank <= 3 && r.perfResidCentered < 0))]
+      .sort((a, b) => (a.perfResidCentered * Math.sqrt(a.infoW)) - (b.perfResidCentered * Math.sqrt(b.infoW)))
       .slice(0, 10);
 
     const targetGauge = opts.targetGauge || 'nc';

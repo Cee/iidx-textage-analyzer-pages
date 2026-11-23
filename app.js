@@ -12,13 +12,13 @@
 
   const RADAR_CFG = {
     sp: {
-      labels: ['乱打/高速', '階段/指独立', '物量/体力', '認識/ズレ', '縦連/軸', '皿/皿複合', 'CN/HCN', 'ソフラン'],
+      labels: ['乱打/高速', '階段/指独立', '物量/体力', '認識/ズレ', '縦連/軸', '皿/皿複合', 'CN/HCN', '变速/ソフラン'],
       cols:   ['#38bdf8', '#60a5fa', '#22c55e', '#14b8a6', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4'],
       fill:   'rgba(59,130,246,0.22)',
       stroke: '#3b82f6',
     },
     dp: {
-      labels: ['片手力/复用', '両手物量', '認識/左右振り', '無理押し/移動', '縦連/軸', '着地/皿', '片手CN', 'ソフラン'],
+      labels: ['片手力/复用', '両手物量', '認識/左右振り', '無理押し/移動', '縦連/軸', '着地/皿', '片手CN', '变速/ソフラン'],
       cols:   ['#14b8a6', '#22c55e', '#38bdf8', '#f97316', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4'],
       fill:   'rgba(20,184,166,0.22)',
       stroke: '#14b8a6',
@@ -101,6 +101,25 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  const LAMP_LEGEND_ITEMS = [
+    { key: 'fc',   countKey: 'FC',     label: 'FC',     title: 'FULLCOMBO（闪白灯）' },
+    { key: 'exhc', countKey: 'EXHC',   label: 'EXHC',   title: 'EX HARD（红黄交替闪）' },
+    { key: 'hc',   countKey: 'HC',     label: 'HC',     title: 'HARD（黄蓝白三色彩灯）' },
+    { key: 'nc',   countKey: 'NC',     label: 'NC',     title: 'CLEAR（蓝灯）' },
+    { key: 'ec',   countKey: 'EC',     label: 'EC',     title: 'EASY CLEAR（绿灯）' },
+    { key: 'ac',   countKey: 'ASSIST', label: 'AC',     title: 'ASSIST CLEAR（紫灯）' },
+    { key: 'f',    countKey: 'FAILED', label: 'FAILED', title: 'FAILED（未过关）' },
+  ];
+
+  function renderLampBadge(lampMeta, opts) {
+    if (!lampMeta) return '';
+    const k = lampMeta.key || 'f';
+    const text = (opts && opts.full) ? lampMeta.label : lampMeta.short;
+    const extraStyle = (opts && opts.style) ? ` style="${opts.style}"` : '';
+    const showDot = k === 'fc' || k === 'exhc' || k === 'hc';
+    return `<span class="lamp-badge lamp-badge-${k}"${extraStyle}>${showDot ? `<span class="lamp-dot lamp-${k}"></span>` : ''}${esc(text)}</span>`;
   }
 
   function tierCls(t) { return 'tier-' + String(t || 'D').replace('+', 'p'); }
@@ -589,8 +608,7 @@
     const diffShort = c.dChar === 'L' ? '†' : c.dChar;
     const sel = c.id === state.selectedId ? 'selected' : '';
     const rec = getUserRecord(c.mode, c.id);
-    const lampCls = rec ? 'has-lamp' : '';
-    const lampStyle = rec ? `style="border-left-color:${rec.lampMeta.color}"` : '';
+    const lampCls = rec ? `has-lamp lamp-edge-${rec.lampMeta.key}` : '';
 
     const lvPill = showLvBadge ? `<span class="chip-lv mono">★${c.lv}</span>` : '';
     const extraTag = c.kj ? `<span class="chip-tag">[${esc(c.tags.filter((t) => t !== '地力')[0] || '個人差')}]</span>` : '';
@@ -602,7 +620,7 @@
       ? ` | 我的灯:${rec.lamp}${rec.hasScore ? ` (${rec.dj || ''} ${(rec.exRate * 100).toFixed(1)}%)` : ''}${rec.hasBp ? ` BP:${rec.bp}` : ''}`
       : '';
 
-    return `<button type="button" class="chip ${sel} ${lampCls}" ${lampStyle} data-id="${c.id}" title="${esc(c.title)} [${c.diff} ★${c.lv} · ${c.ver}] | EC:${c.tier_ec} NC:${c.tier_nc} HC:${c.tier_hc} EX:${c.tier_exhc}${optTitle}${recTitle}">
+    return `<button type="button" class="chip ${sel} ${lampCls}" data-id="${c.id}" title="${esc(c.title)} [${c.diff} ★${c.lv} · ${c.ver}] | EC:${c.tier_ec} NC:${c.tier_nc} HC:${c.tier_hc} EX:${c.tier_exhc}${optTitle}${recTitle}">
       ${lvPill}
       <span class="diff-${c.dChar}">${diffShort}</span>
       <span class="chip-title">${esc(c.title)}</span>
@@ -627,10 +645,7 @@
       <div class="card" style="padding:8px 14px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--muted);">
         <span><b style="color:var(--coach-ink);">已叠加个人清灯</b>（曲目卡片左侧色条代表官方清灯状态）</span>
         <div style="display:flex;flex-wrap:wrap;gap:9px;">
-          ${[
-            ['FC', '#22d3ee'], ['EXHC', '#facc15'], ['HC', '#f87171'], ['NC', '#38bdf8'],
-            ['EC', '#4ade80'], ['AC', '#c084fc'], ['FAILED', '#ef4444'],
-          ].map(([k, col]) => `<span style="display:inline-flex;align-items:center;gap:4px;"><span class="lamp-dot" style="background:${col};"></span>${k}</span>`).join('')}
+          ${LAMP_LEGEND_ITEMS.map((item) => `<span style="display:inline-flex;align-items:center;gap:4px;" title="${item.title}"><span class="lamp-dot lamp-${item.key}"></span>${item.label}</span>`).join('')}
         </div>
       </div>
     ` : '';
@@ -707,7 +722,7 @@
     }
 
     const CHIP_CAP = 90;
-    let html = toolbar;
+    let html = lampLegendHtml + toolbar;
     for (const g of groups) {
       const isExpanded = state.expandedGroups.has(g.key);
       const visible = isExpanded ? g.items : g.items.slice(0, CHIP_CAP);
@@ -821,7 +836,7 @@
               const rec = hasLampData ? state.csvReport.recordMap.get(c.id) : null;
               const recCell = hasLampData
                 ? `<td class="mono">${rec
-                    ? `<span class="lamp-badge" style="background:${rec.lampMeta.bg};color:${rec.lampMeta.color};">${rec.lampMeta.short}</span>${rec.exRate !== null ? ` <span style="opacity:0.8;">${(rec.exRate * 100).toFixed(1)}%</span>` : ''}${rec.hasBp ? ` <span style="color:var(--muted);">BP${rec.bp}</span>` : ''}`
+                    ? `${renderLampBadge(rec.lampMeta)}${rec.exRate !== null ? ` <span style="opacity:0.8;">${(rec.exRate * 100).toFixed(1)}%</span>` : ''}${rec.hasBp ? ` <span style="color:var(--muted);">BP${rec.bp}</span>` : ''}`
                     : '<span style="color:var(--muted);">—</span>'}</td>`
                 : '';
               const optCol = isDp ? 'var(--dp-ink)' : 'var(--accent-ink)';
@@ -976,7 +991,7 @@
         <div>
           ${g.items.length ? g.items.map((c, i) => {
             const rec = getUserRecord('sp', c.id);
-            const lampPill = rec ? `<span class="lamp-badge" style="margin-left:5px;background:${rec.lampMeta.bg};color:${rec.lampMeta.color};">${rec.lampMeta.short}</span>` : '';
+            const lampPill = rec ? renderLampBadge(rec.lampMeta, { style: 'margin-left:5px;' }) : '';
             return `
               <div data-id="${c.id}" class="rank-row">
                 <div style="font-weight:600;">
@@ -1025,7 +1040,7 @@
         <div>
           ${g.items.length ? g.items.map((c, i) => {
             const rec = getUserRecord('dp', c.id);
-            const lampPill = rec ? `<span class="lamp-badge" style="margin-left:5px;background:${rec.lampMeta.bg};color:${rec.lampMeta.color};">${rec.lampMeta.short}</span>` : '';
+            const lampPill = rec ? renderLampBadge(rec.lampMeta, { style: 'margin-left:5px;' }) : '';
             return `
               <div data-id="${c.id}" class="rank-row">
                 <div style="font-weight:600;">
@@ -1139,7 +1154,7 @@
         <div class="player-ins-card">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
             <span style="font-weight:800;color:var(--coach-ink);">我的实测记录</span>
-            <span class="lamp-badge" style="background:${rec.lampMeta.bg};color:${rec.lampMeta.color};">${esc(rec.lamp)}</span>
+            ${renderLampBadge(rec.lampMeta, { full: true })}
           </div>
           <div class="mono" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
             <div>EX: <b>${esc(scoreText)}</b></div>
@@ -1443,22 +1458,12 @@
 
     // Per-level lamp progress bars (only levels with played > 0)
     const activeLvs = rep.levelSummary.filter((l) => l.played > 0);
-    const lampOrder = [
-      ['FC', '#22d3ee'],
-      ['EXHC', '#facc15'],
-      ['HC', '#f87171'],
-      ['NC', '#38bdf8'],
-      ['EC', '#4ade80'],
-      ['ASSIST', '#c084fc'],
-      ['FAILED', '#475569'],
-    ];
-
     const levelBarsHtml = activeLvs.map((l) => {
-      const segs = lampOrder.map(([k, col]) => {
-        const cnt = l.counts[k];
+      const segs = LAMP_LEGEND_ITEMS.map((item) => {
+        const cnt = l.counts[item.countKey];
         if (!cnt) return '';
         const pct = (cnt / l.played) * 100;
-        return `<div style="width:${pct.toFixed(2)}%;background:${col};" title="${k}: ${cnt}"></div>`;
+        return `<div class="lamp-bar-seg lamp-${item.key}" style="width:${pct.toFixed(2)}%;" title="${item.label}: ${cnt}"></div>`;
       }).join('');
       return `
         <div class="lv-prog-row">
@@ -1492,7 +1497,7 @@
                     <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
                     ${esc(c.title)}
                   </div>
-                  <span class="lamp-badge" style="background:${r.lampMeta.bg};color:${r.lampMeta.color};">${r.lampMeta.short}</span>
+                  ${renderLampBadge(r.lampMeta)}
                 </div>
                 <div class="mono" style="font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;">
                   <span>${esc(q.reason)}</span>
@@ -1532,7 +1537,7 @@
                           <span class="truncate" style="font-weight:700;font-size:12px;">
                             <span class="diff-${c.dChar}">[${c.dChar}]</span> ${esc(c.title)}
                           </span>
-                          ${ex ? `<span class="lamp-badge" style="background:${ex.lampMeta.bg};color:${ex.lampMeta.color};">${ex.lampMeta.short}</span>` : '<span class="pill" style="font-size:10px;padding:1px 5px;">未玩</span>'}
+                          ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">未玩</span>'}
                         </div>
                         <div class="mono" style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;">
                           <span>★${c.lv} · ${esc(c.verCode)} · ${esc(c.bestOpt)}</span>
@@ -1565,7 +1570,7 @@
                     <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
                     ${esc(c.title)}
                   </div>
-                  ${ex ? `<span class="lamp-badge" style="background:${ex.lampMeta.bg};color:${ex.lampMeta.color};">${ex.lampMeta.short}</span>` : '<span class="pill" style="font-size:10px;padding:1px 5px;">新曲</span>'}
+                  ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">新曲</span>'}
                 </div>
                 <div class="mono" style="font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;gap:6px;">
                   <span>${esc(c.verCode)} ${esc(c.ver)} · ${esc(c.tags.slice(0, 2).join('/'))} · ${esc(c.bestOpt)}</span>
@@ -1585,7 +1590,7 @@
               <span class="diff-${r.chart.dChar}" style="margin:0 4px;">[${r.chart.dChar}]</span>
               ${esc(r.chart.title)}
             </span>
-            <span class="lamp-badge" style="background:${r.lampMeta.bg};color:${r.lampMeta.color};">${r.lampMeta.short}</span>
+            ${renderLampBadge(r.lampMeta)}
           </div>
           <div class="mono" style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;">
             <span>[${esc(r.chart.tags.slice(0, 2).join('/'))}] ${r.exRate !== null ? `EX ${(r.exRate * 100).toFixed(1)}%` : '旧代灯'}${r.hasBp ? ` · ${r.bp} BP` : ''}</span>
@@ -1616,6 +1621,7 @@
     const missingNote = rep.missingTextageDiffs > 0
       ? `（另有 ${rep.missingTextageDiffs} 张最新代 N/H 谱面 Textage 尚未收录）`
       : '';
+    const focusRangeStr = `★${rep.focusLevels[0]}–★${rep.focusLevels[rep.focusLevels.length - 1]}`;
 
     root.innerHTML = `
       <!-- Top Import Status Banner -->
@@ -1648,11 +1654,11 @@
           <div class="kpi-sub">${rep.irt.nc?.eq ? `约 ${rep.irt.nc.eq.label} · 最高 NC CP ${rep.irt.nc.maxPos}` : '需更多清灯/未过样本'}</div>
         </div>
         <div class="card csv-kpi-card">
-          <div class="kpi-label">EC 绿灯 / HC 红灯能力估算</div>
+          <div class="kpi-label">EC 绿灯 / HC 彩灯能力估算</div>
           <div class="kpi-val mono" style="font-size:15px;">
             <span style="color:#4ade80;">EC ${rep.irt.ec?.theta?.toFixed(1) ?? '—'}</span>
             <span style="color:var(--muted);margin:0 4px;">/</span>
-            <span style="color:#f87171;">HC ${rep.irt.hc?.theta?.toFixed(1) ?? '—'}</span>
+            <span style="color:#38bdf8;">HC ${rep.irt.hc?.theta?.toFixed(1) ?? '—'}</span>
           </div>
           <div class="kpi-sub">${rep.irt.hc?.note ? esc(rep.irt.hc.note) : `EC≈${rep.irt.ec?.eq?.label || '—'} · HC最高 ${rep.irt.hc?.maxPos ?? '—'}`}</div>
         </div>
@@ -1668,7 +1674,7 @@
             <span style="color:var(--muted);margin:0 5px;">|</span>
             <span style="color:var(--neg);">弱: ${rep.topWeaknesses.length ? esc(rep.topWeaknesses.slice(0, 2).map((a) => a.short).join('·')) : '无明显短板'}</span>
           </div>
-          <div class="kpi-sub">基于同等级难度修正残差计算（消除等级偏置）</div>
+          <div class="kpi-sub">基于主攻区 ${focusRangeStr} 与本代实测加权残差</div>
         </div>
       </div>
 
@@ -1688,7 +1694,7 @@
         <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
           <h2 style="margin:0;font-size:14px;font-weight:800;">各等级清灯分布（点击左侧 ★N 直接跳转难度表）</h2>
           <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted);">
-            ${lampOrder.map(([k, col]) => `<span style="display:inline-flex;align-items:center;gap:4px;"><span class="lamp-dot" style="background:${col};"></span>${k}</span>`).join('')}
+            ${LAMP_LEGEND_ITEMS.map((item) => `<span style="display:inline-flex;align-items:center;gap:4px;" title="${item.title}"><span class="lamp-dot lamp-${item.key}"></span>${item.label}</span>`).join('')}
           </div>
         </div>
         <div class="level-progress-grid">${levelBarsHtml}</div>
@@ -1721,7 +1727,12 @@
         </div>
 
         <div class="card diagnosis-box">
-          <h2 style="margin:0;font-size:14.5px;font-weight:800;">八维能力强弱排序与典型谱面例证</h2>
+          <div>
+            <h2 style="margin:0;font-size:14.5px;font-weight:800;">八维能力强弱排序与典型谱面例证</h2>
+            <p style="margin:3px 0 0;font-size:11.5px;color:var(--muted);">
+              已聚焦主攻区间 <b>${focusRangeStr}</b> 与本代实测数据：跨级谱面（区间外）与上代继承旧灯（尤指旧代 FAILED）已自动降权。
+            </p>
+          </div>
           <div style="display:flex;flex-direction:column;gap:8px;">
             ${sortedAxes.map((ax) => {
               const vCls = ax.strengthIndex >= 4 ? 'verdict-pos' : (ax.strengthIndex <= -4 ? 'verdict-neg' : 'verdict-mid');
@@ -1735,13 +1746,13 @@
                       <span class="verdict-pill ${vCls}">${ax.verdict} (${sign}${ax.strengthIndex})</span>
                     </div>
                     <div class="mono" style="font-size:11.5px;color:var(--muted);">
-                      样本 ${ax.n} · 实测NC <b>${ax.actualNcPct !== null ? ax.actualNcPct.toFixed(0) + '%' : '—'}</b> (预期 ${ax.expectedNcPct !== null ? ax.expectedNcPct.toFixed(0) + '%' : '—'})${ax.deltaExPct !== null ? ` · EX差 ${ax.deltaExPct > 0 ? '+' : ''}${ax.deltaExPct.toFixed(1)}%` : ''}
+                      主攻 ${ax.focusN}/${ax.n} 谱 · 实测NC <b>${ax.actualNcPct !== null ? ax.actualNcPct.toFixed(0) + '%' : '—'}</b> (预期 ${ax.expectedNcPct !== null ? ax.expectedNcPct.toFixed(0) + '%' : '—'})${ax.deltaExPct !== null ? ` · EX差 ${ax.deltaExPct > 0 ? '+' : ''}${ax.deltaExPct.toFixed(1)}%` : ''}
                     </div>
                   </div>
                   ${renderBipolarBar(ax.strengthIndex)}
-                  <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px;">
-                    ${ax.highlights.length ? `<span style="color:var(--pos);font-weight:700;">高光:</span>` + ax.highlights.slice(0, 2).map((h) => `<button type="button" class="pill modal-chart-btn" data-cid="${h.chart.id}" style="cursor:pointer;">★${h.chart.lv} ${esc(h.chart.title.slice(0, 18))} (${h.lampMeta.short})</button>`).join('') : ''}
-                    ${ax.struggles.length ? `<span style="color:var(--neg);font-weight:700;margin-left:4px;">卡关:</span>` + ax.struggles.slice(0, 2).map((s) => `<button type="button" class="pill modal-chart-btn" data-cid="${s.chart.id}" style="cursor:pointer;">★${s.chart.lv} ${esc(s.chart.title.slice(0, 18))} (${s.lampMeta.short})</button>`).join('') : ''}
+                  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;">
+                    ${ax.highlights.length ? `<span style="color:var(--pos);font-weight:700;">高光:</span>` + ax.highlights.slice(0, 2).map((h) => `<button type="button" class="pill modal-chart-btn" data-cid="${h.chart.id}" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${h.lampMeta.key}" style="width:6px;height:6px;"></span>★${h.chart.lv} ${esc(h.chart.title.slice(0, 18))} (${h.lampMeta.short}${h.isCarryover ? '·旧' : ''})</button>`).join('') : ''}
+                    ${ax.struggles.length ? `<span style="color:var(--neg);font-weight:700;margin-left:4px;">卡关:</span>` + ax.struggles.slice(0, 2).map((s) => `<button type="button" class="pill modal-chart-btn" data-cid="${s.chart.id}" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${s.lampMeta.key}" style="width:6px;height:6px;"></span>★${s.chart.lv} ${esc(s.chart.title.slice(0, 18))} (${s.lampMeta.short}${s.isCarryover ? '·旧' : ''})</button>`).join('') : ''}
                   </div>
                 </div>
               `;
@@ -1782,8 +1793,8 @@
               <select id="csv-target-gauge" class="select-input">
                 <option value="ec" ${state.csvTargetGauge === 'ec' ? 'selected' : ''}>EC 绿灯</option>
                 <option value="nc" ${state.csvTargetGauge === 'nc' ? 'selected' : ''}>NC 蓝灯</option>
-                <option value="hc" ${state.csvTargetGauge === 'hc' ? 'selected' : ''}>HC 红灯</option>
-                <option value="exhc" ${state.csvTargetGauge === 'exhc' ? 'selected' : ''}>EXHC 黄灯</option>
+                <option value="hc" ${state.csvTargetGauge === 'hc' ? 'selected' : ''}>HC 彩灯</option>
+                <option value="exhc" ${state.csvTargetGauge === 'exhc' ? 'selected' : ''}>EXHC 红黄灯</option>
               </select>
             </label>
             <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;">
