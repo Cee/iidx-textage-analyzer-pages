@@ -2,6 +2,8 @@
   'use strict';
 
   const BASE_URL = 'https://textage.cc/score/';
+  const PRACTICE_BASE_URL = 'https://iidx-play.cee.ee/';
+  const PRACTICE_TEXTAGE_PATH_RE = /^\/score\/\d{1,2}\/[a-zA-Z0-9_-]+\.html$/;
   const DIFF_LET = ['B', 'N', 'H', 'A', 'L'];
   const ALL_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   const TIER_ORDER_12 = ['S+', 'S', 'A+', 'A', 'B+', 'B', 'C', 'D', 'E', 'F'];
@@ -60,6 +62,9 @@
   let DATASETS = { sp: [], dp: [] };
   let CHART_BY_ID = { sp: new Map(), dp: new Map() };
   let VER_INFO = []; // [{ idx, code, name }]
+  let cpDomain = { min: 0, max: 100, preCpList: [], bins: 32 };
+  let cpBarReady = false;
+  let cpDragRaf = 0;
 
   const state = {
     tab: location.hash === '#dp' ? 'dp' : (location.hash === '#csv' ? 'csv' : 'sp'),
@@ -67,6 +72,9 @@
     levels: new Set([12]),
     levelMulti: false,
     diffs: new Set(['B', 'N', 'H', 'A', 'L']),
+    tiers: new Set(), // empty = ALL tiers
+    cpMin: null, // null = full lower bound in multi-level mode
+    cpMax: null, // null = full upper bound in multi-level mode
     selectedVers: new Set(), // empty = ALL versions
     verPanelOpen: false,
     gauge: 'hc',
@@ -125,6 +133,43 @@
   }
 
   function tierCls(t) { return 'tier-' + String(t || 'D').replace('+', 'p'); }
+  function tierPillCls(t) { return 'tp-' + String(t || 'D').replace('+', 'p'); }
+
+  function buildPracticeUrl(c) {
+    if (!c || c.mode !== 'sp') return null;
+    const url = new URL(PRACTICE_BASE_URL);
+    url.searchParams.set('song', c.title);
+    url.searchParams.set('chart', c.diff);
+    // Always pass canonical 1P Textage URL (?1P/1N/1H/1A/1X...) so iidx-play.cee.ee's
+    // matchServerChart() & textageExtract() (1P scratch at left:0) auto-import cleanly.
+    const textage1p = (c._1p && c._1p.url) || c.url;
+    let hasDirectTextage = false;
+    try {
+      const parsed = new URL(textage1p);
+      if (PRACTICE_TEXTAGE_PATH_RE.test(parsed.pathname)) {
+        url.searchParams.set('textage', textage1p);
+        hasDirectTextage = true;
+      }
+    } catch (_) {}
+    const title = hasDirectTextage
+      ? '在 iidx-play.cee.ee 自动载入此 SP 谱面（若已有共享视频/偏移配置将自动恢复；固定传入 1P 源谱面，2P 玩家可在练习页切换右皿）'
+      : '在 iidx-play.cee.ee 带入曲名与难度（substream /score/s/ 暂不支持代理自动抓取，可在 Textage 页使用导入书签）';
+    return { href: url.href, hasDirectTextage, title };
+  }
+
+  function renderPracticeLink(c, compact) {
+    const info = buildPracticeUrl(c);
+    if (!info) return '';
+    if (compact) {
+      return `<a href="${esc(info.href)}" target="_blank" rel="noopener" class="rec-play-link" title="${esc(info.title)}">练习 ↗</a>`;
+    }
+    return `<a href="${esc(info.href)}" target="_blank" rel="noopener" class="btn btn-sm btn-practice" title="${esc(info.title)}">去 iidx-play 练习 ↗</a>`;
+  }
+
+  function resetCpRange() {
+    state.cpMin = null;
+    state.cpMax = null;
+  }
 
   function activeExplorerMode() {
     return state.tab === 'dp' ? 'dp' : 'sp';
@@ -278,7 +323,7 @@
     return true;
   }
 
-  function getFiltered() {
+  function getPreTierFiltered() {
     const mode = activeExplorerMode();
     const list = DATASETS[mode];
     const q = state.search.trim().toLowerCase();
@@ -308,6 +353,29 @@
       }
       return true;
     });
+  }
+
+  function getValidTierOrder() {
+    if (state.levels.has(12)) return TIER_ORDER_12;
+    for (const lv of state.levels) {
+      if (lv >= 8) return TIER_ORDER_MID;
+    }
+    return TIER_ORDER_LOW;
+  }
+
+  function applyTierFilter(list) {
+    if (state.tiers.size === 0) return list;
+    const tKey = 'tier_' + state.gauge;
+    return list.filter((c) => state.tiers.has(c[tKey]));
+  }
+
+  function applyCpRangeFilter(list) {
+    if (state.levels.size <= 1) return list;
+    if (state.cpMin === null && state.cpMax === null) return list;
+    const sKey = 's_' + state.gauge;
+    const lo = state.cpMin !== null ? state.cpMin - 1e-6 : -Infinity;
+    const hi = state.cpMax !== null ? state.cpMax + 1e-6 : Infinity;
+    return list.filter((c) => c[sKey] >= lo && c[sKey] <= hi);
   }
 
   function describeSelectedLevels() {
@@ -364,8 +432,8 @@
       : `Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag">SP v7 · ${sideLabel} · 官方AC四血条·多选项减负</span>`;
 
     document.getElementById('page-desc').innerHTML = isDp
-      ? `Textage.cc 全量 DP 谱面（共 <b>${P.meta.dpTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.dpAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、历代版本筛选、AC 标准 DP 选项求解与 Konami CSV 个人清灯叠加。`
-      : `Textage.cc 全量 SP 谱面（共 <b>${P.meta.spTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.spAc.toLocaleString()}</b> 谱）· 当前为 <b>${sideLabel}</b> 视角，支持 1P/2P 切换、SP 多选项生物力学减负（鏡/R乱/乱/S乱）与 Konami CSV 个人清灯叠加。`;
+      ? `Textage.cc 全量 DP 谱面（共 <b>${P.meta.dpTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.dpAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、分档筛选、历代版本筛选、AC 标准 DP 选项求解与 Konami CSV 个人清灯叠加。`
+      : `Textage.cc 全量 SP 谱面（共 <b>${P.meta.spTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.spAc.toLocaleString()}</b> 谱）· 当前为 <b>${sideLabel}</b> 视角，支持 1P/2P 切换、分档与跨级 CP 细选、SP 多选项减负与一键导入 <b>iidx-play.cee.ee</b> 练习。`;
 
     const optBtn = document.getElementById('v-btn-opt');
     optBtn.textContent = isDp ? 'DP 选项减负榜' : 'SP 选项减负榜';
@@ -421,6 +489,7 @@
       } else {
         state.levels = new Set(ALL_LEVELS);
       }
+      resetCpRange();
       state.selectedId = null;
       state.tablePage = 1;
       state.expandedGroups.clear();
@@ -446,6 +515,7 @@
         } else {
           state.levels = new Set([lv]);
         }
+        resetCpRange();
         state.selectedId = null;
         state.tablePage = 1;
         state.expandedGroups.clear();
@@ -594,6 +664,390 @@
       const g = btn.dataset.g;
       btn.className = 'g-btn' + (g === state.gauge ? ` g-${g}` : '');
     });
+  }
+
+  function renderTierFilter(preTierList) {
+    const row = document.getElementById('tier-filter-row');
+    if (!row) return;
+    const order = getValidTierOrder();
+    const orderSet = new Set(order);
+    for (const t of [...state.tiers]) {
+      if (!orderSet.has(t)) state.tiers.delete(t);
+    }
+
+    const tKey = 'tier_' + state.gauge;
+    const counts = new Map();
+    for (const t of order) counts.set(t, 0);
+    for (const c of preTierList) {
+      const t = c[tKey];
+      if (counts.has(t)) counts.set(t, counts.get(t) + 1);
+    }
+
+    const isAll = state.tiers.size === 0;
+    const gUpper = state.gauge.toUpperCase();
+    const pillsHtml = [
+      `<button type="button" id="btn-tier-all" class="tier-pill all-tier mono ${isAll ? 'active' : ''}">全部档位 <span class="tp-cnt">(${preTierList.length})</span></button>`,
+      ...order.map((tier) => {
+        const cnt = counts.get(tier) || 0;
+        const on = !isAll && state.tiers.has(tier);
+        const dimmed = cnt === 0 && !on ? 'dimmed' : '';
+        return `<button type="button" data-tier="${tier}" class="tier-pill mono ${tierPillCls(tier)} ${on ? 'active' : ''} ${dimmed}" title="筛选 ${gUpper} ${tier} 档位（支持多选叠加）"><span class="tier-dot"></span>${tier}<span class="tp-cnt">(${cnt})</span></button>`;
+      }),
+    ].join('');
+
+    const rightHtml = isAll
+      ? `<span class="tier-filter-hint">点击档位可单选 / 多选叠加</span>`
+      : `<span class="tier-filter-hint"><span>已选 <b class="mono" style="color:var(--ink);">${state.tiers.size}</b> 档</span><button type="button" id="btn-tier-reset" class="btn btn-sm">重置档位</button></span>`;
+
+    row.innerHTML = `
+      <span class="filter-label">${gUpper} 档位</span>
+      <div class="tier-filter-pills">${pillsHtml}</div>
+      ${rightHtml}
+    `;
+
+    const clearTiers = () => {
+      state.tiers.clear();
+      state.tablePage = 1;
+      state.expandedGroups.clear();
+      renderAll();
+    };
+    document.getElementById('btn-tier-all').addEventListener('click', clearTiers);
+    const resetBtn = document.getElementById('btn-tier-reset');
+    if (resetBtn) resetBtn.addEventListener('click', clearTiers);
+
+    row.querySelectorAll('[data-tier]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const t = btn.dataset.tier;
+        if (state.tiers.has(t)) {
+          state.tiers.delete(t);
+        } else {
+          state.tiers.add(t);
+          if (state.tiers.size >= order.length) state.tiers.clear();
+        }
+        state.tablePage = 1;
+        state.expandedGroups.clear();
+        renderAll();
+      });
+    });
+  }
+
+  function getPlayerThetaForGauge() {
+    const mode = activeExplorerMode();
+    if (!state.csvReport || state.csvReport.mode !== mode || !state.csvReport.irt) return null;
+    const irt = state.csvReport.irt;
+    if (irt[state.gauge] && Number.isFinite(irt[state.gauge].theta)) {
+      return { theta: irt[state.gauge].theta, gauge: state.gauge };
+    }
+    if (irt.nc && Number.isFinite(irt.nc.theta)) {
+      return { theta: irt.nc.theta, gauge: 'nc' };
+    }
+    return null;
+  }
+
+  function snapHalf(v) {
+    return Math.round(v * 2) / 2;
+  }
+
+  function ensureCpRangeBarDom() {
+    if (cpBarReady) return;
+    const bar = document.getElementById('cp-range-bar');
+    if (!bar) return;
+    bar.innerHTML = `
+      <div class="cp-range-head">
+        <div class="cp-range-meta">
+          <span id="cp-range-summary"></span>
+          <span id="cp-window-badge" class="cp-window-badge mono"></span>
+        </div>
+        <div class="seg-group" id="cp-mgrp-group" role="group" aria-label="跨级分组方式">
+          <button type="button" data-mgrp="level" class="seg-btn cp-mgrp-btn">按官方等级分组 (★12→★1)</button>
+          <button type="button" data-mgrp="cp" class="seg-btn cp-mgrp-btn" id="btn-mgrp-cp">按跨级 CP 区间</button>
+        </div>
+      </div>
+      <div class="cp-slider-body">
+        <label class="cp-num-box">
+          <span class="cp-num-label">下限 CP</span>
+          <input id="cp-num-min" class="cp-num-input mono" type="number" step="0.5" />
+        </label>
+        <div class="dual-range-col">
+          <div id="cp-hist" class="cp-hist" aria-hidden="true"></div>
+          <div class="dual-range-wrap">
+            <div class="dual-range-track"></div>
+            <div id="cp-range-fill" class="dual-range-fill"></div>
+            <div id="cp-theta-pin" class="cp-theta-pin hidden"></div>
+            <input id="cp-slider-min" class="dual-range-input" type="range" step="0.5" aria-label="跨级 CP 下限" />
+            <input id="cp-slider-max" class="dual-range-input" type="range" step="0.5" aria-label="跨级 CP 上限" />
+          </div>
+          <div id="cp-range-ticks" class="cp-range-ticks mono"></div>
+        </div>
+        <label class="cp-num-box">
+          <span class="cp-num-label">上限 CP</span>
+          <input id="cp-num-max" class="cp-num-input mono" type="number" step="0.5" />
+        </label>
+      </div>
+      <div class="cp-range-foot">
+        <span id="cp-range-foot-note">拖动左右滑块可实时细选跨级 CP 窗口，窄区间自动加密分档步长。</span>
+        <div class="cp-quick-btns">
+          <button type="button" id="btn-cp-my-theta" class="btn btn-sm btn-coach hidden"></button>
+          <button type="button" id="btn-cp-reset" class="btn btn-sm">重置全区间</button>
+        </div>
+      </div>
+    `;
+    cpBarReady = true;
+
+    const minSlider = document.getElementById('cp-slider-min');
+    const maxSlider = document.getElementById('cp-slider-max');
+    const minNum = document.getElementById('cp-num-min');
+    const maxNum = document.getElementById('cp-num-max');
+
+    const applyRangeBounds = (rawLo, rawHi) => {
+      const dMin = cpDomain.min;
+      const dMax = cpDomain.max;
+      let lo = Math.max(dMin, Math.min(dMax, snapHalf(rawLo)));
+      let hi = Math.max(dMin, Math.min(dMax, snapHalf(rawHi)));
+      if (lo > hi) { const t = lo; lo = hi; hi = t; }
+      state.cpMin = lo <= dMin + 1e-6 ? null : lo;
+      state.cpMax = hi >= dMax - 1e-6 ? null : hi;
+      state.tablePage = 1;
+      state.expandedGroups.clear();
+      const filtered = applyCpRangeFilter(cpDomain.preCpList);
+      updateCpRangeVisuals(filtered.length);
+      scheduleCpLiveUpdate();
+    };
+
+    minSlider.addEventListener('input', () => {
+      const curHi = state.cpMax !== null ? state.cpMax : cpDomain.max;
+      let val = Number(minSlider.value);
+      if (val > curHi) {
+        val = curHi;
+        minSlider.value = String(val);
+      }
+      applyRangeBounds(val, curHi);
+    });
+
+    maxSlider.addEventListener('input', () => {
+      const curLo = state.cpMin !== null ? state.cpMin : cpDomain.min;
+      let val = Number(maxSlider.value);
+      if (val < curLo) {
+        val = curLo;
+        maxSlider.value = String(val);
+      }
+      applyRangeBounds(curLo, val);
+    });
+
+    minNum.addEventListener('change', () => {
+      const v = Number(minNum.value);
+      const curHi = state.cpMax !== null ? state.cpMax : cpDomain.max;
+      applyRangeBounds(Number.isFinite(v) ? v : cpDomain.min, curHi);
+    });
+
+    maxNum.addEventListener('change', () => {
+      const v = Number(maxNum.value);
+      const curLo = state.cpMin !== null ? state.cpMin : cpDomain.min;
+      applyRangeBounds(curLo, Number.isFinite(v) ? v : cpDomain.max);
+    });
+
+    bar.querySelectorAll('.cp-mgrp-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.multiBoardGroup = btn.dataset.mgrp;
+        state.expandedGroups.clear();
+        const filtered = applyCpRangeFilter(cpDomain.preCpList);
+        updateCpRangeVisuals(filtered.length);
+        renderMainView(filtered);
+      });
+    });
+
+    document.getElementById('btn-cp-my-theta').addEventListener('click', () => {
+      const info = getPlayerThetaForGauge();
+      if (!info) return;
+      if (state.view === 'board') state.multiBoardGroup = 'cp';
+      applyRangeBounds(info.theta - 6, info.theta + 6);
+    });
+
+    document.getElementById('btn-cp-reset').addEventListener('click', () => {
+      resetCpRange();
+      state.tablePage = 1;
+      state.expandedGroups.clear();
+      const filtered = applyCpRangeFilter(cpDomain.preCpList);
+      updateCpRangeVisuals(filtered.length);
+      scheduleCpLiveUpdate();
+    });
+  }
+
+  function updateCpRangeVisuals(matchedCount) {
+    const dMin = cpDomain.min;
+    const dMax = cpDomain.max;
+    const span = Math.max(0.5, dMax - dMin);
+    const effMin = state.cpMin !== null ? state.cpMin : dMin;
+    const effMax = state.cpMax !== null ? state.cpMax : dMax;
+    const isNarrowed = state.cpMin !== null || state.cpMax !== null;
+    const gUpper = state.gauge.toUpperCase();
+    const totalCount = cpDomain.preCpList.length;
+
+    const minSlider = document.getElementById('cp-slider-min');
+    const maxSlider = document.getElementById('cp-slider-max');
+    const minNum = document.getElementById('cp-num-min');
+    const maxNum = document.getElementById('cp-num-max');
+    const fill = document.getElementById('cp-range-fill');
+    const summaryEl = document.getElementById('cp-range-summary');
+    const badgeEl = document.getElementById('cp-window-badge');
+    const resetBtn = document.getElementById('btn-cp-reset');
+    const mgrpGroup = document.getElementById('cp-mgrp-group');
+    const btnMgrpCp = document.getElementById('btn-mgrp-cp');
+
+    minSlider.value = String(effMin);
+    maxSlider.value = String(effMax);
+    minNum.value = effMin.toFixed(1);
+    maxNum.value = effMax.toFixed(1);
+
+    // Keep overlapping thumbs separable at both ends
+    if (effMin > dMin + span * 0.5) {
+      minSlider.style.zIndex = '4';
+      maxSlider.style.zIndex = '3';
+    } else {
+      minSlider.style.zIndex = '3';
+      maxSlider.style.zIndex = '4';
+    }
+
+    const pMin = Math.max(0, Math.min(1, (effMin - dMin) / span));
+    const pMax = Math.max(0, Math.min(1, (effMax - dMin) / span));
+    fill.style.left = `calc(8px + (100% - 16px) * ${pMin.toFixed(5)})`;
+    fill.style.width = `calc((100% - 16px) * ${Math.max(0, pMax - pMin).toFixed(5)})`;
+
+    // Highlight density bars inside [effMin, effMax]
+    const histEl = document.getElementById('cp-hist');
+    const bins = cpDomain.bins;
+    const step = span / bins;
+    for (let i = 0; i < histEl.children.length; i++) {
+      const bLo = dMin + i * step;
+      const bHi = bLo + step;
+      const inside = bHi >= effMin - 1e-6 && bLo <= effMax + 1e-6;
+      histEl.children[i].classList.toggle('in-range', inside);
+    }
+
+    summaryEl.innerHTML = `已选 <b style="color:var(--ink);">${describeSelectedLevels()}</b> · <b class="mono" style="color:var(--ink);">${matchedCount.toLocaleString()}</b> / ${totalCount.toLocaleString()} 谱`;
+    badgeEl.textContent = `${gUpper} CP ${effMin.toFixed(1)} ~ ${effMax.toFixed(1)}${isNarrowed ? ` (宽 ${(effMax - effMin).toFixed(1)})` : ' · 全区间'}`;
+    resetBtn.disabled = !isNarrowed;
+    resetBtn.style.opacity = isNarrowed ? '1' : '0.5';
+
+    mgrpGroup.classList.toggle('hidden', state.view !== 'board');
+    btnMgrpCp.textContent = `按跨级 ${gUpper} CP 区间`;
+    mgrpGroup.querySelectorAll('.cp-mgrp-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.mgrp === state.multiBoardGroup);
+    });
+  }
+
+  function syncCpRangeBar(preCpList) {
+    const bar = document.getElementById('cp-range-bar');
+    if (!bar) return;
+    if (state.levels.size <= 1) {
+      bar.classList.add('hidden');
+      return;
+    }
+    bar.classList.remove('hidden');
+    ensureCpRangeBarDom();
+
+    const sKey = 's_' + state.gauge;
+    let rawMin = Infinity;
+    let rawMax = -Infinity;
+    for (const c of preCpList) {
+      const v = c[sKey];
+      if (v < rawMin) rawMin = v;
+      if (v > rawMax) rawMax = v;
+    }
+    const empty = !Number.isFinite(rawMin) || !Number.isFinite(rawMax);
+    const dMin = empty ? 0 : Math.floor(rawMin * 2) / 2;
+    let dMax = empty ? 100 : Math.ceil(rawMax * 2) / 2;
+    if (dMax <= dMin) dMax = dMin + 0.5;
+    cpDomain = { min: dMin, max: dMax, preCpList, bins: 32 };
+
+    // Clamp active range into new domain
+    if (state.cpMin !== null) {
+      state.cpMin = Math.max(dMin, Math.min(dMax, snapHalf(state.cpMin)));
+      if (state.cpMin <= dMin + 1e-6) state.cpMin = null;
+    }
+    if (state.cpMax !== null) {
+      state.cpMax = Math.max(dMin, Math.min(dMax, snapHalf(state.cpMax)));
+      if (state.cpMax >= dMax - 1e-6) state.cpMax = null;
+    }
+    if (state.cpMin !== null && state.cpMax !== null && state.cpMin > state.cpMax) {
+      resetCpRange();
+    }
+
+    const minSlider = document.getElementById('cp-slider-min');
+    const maxSlider = document.getElementById('cp-slider-max');
+    const minNum = document.getElementById('cp-num-min');
+    const maxNum = document.getElementById('cp-num-max');
+    minSlider.min = maxSlider.min = minNum.min = maxNum.min = String(dMin);
+    minSlider.max = maxSlider.max = minNum.max = maxNum.max = String(dMax);
+    minSlider.disabled = maxSlider.disabled = minNum.disabled = maxNum.disabled = empty;
+
+    // Build mini CP density histogram behind the slider track
+    const bins = cpDomain.bins;
+    const span = Math.max(0.5, dMax - dMin);
+    const histCounts = new Array(bins).fill(0);
+    for (const c of preCpList) {
+      const idx = Math.min(bins - 1, Math.max(0, Math.floor(((c[sKey] - dMin) / span) * bins)));
+      histCounts[idx]++;
+    }
+    const maxBin = Math.max(1, ...histCounts);
+    document.getElementById('cp-hist').innerHTML = histCounts.map((cnt, i) => {
+      const pct = cnt === 0 ? 8 : Math.max(14, Math.round((cnt / maxBin) * 100));
+      const bLo = (dMin + (i / bins) * span).toFixed(1);
+      const bHi = (dMin + ((i + 1) / bins) * span).toFixed(1);
+      return `<div class="cp-hist-bar" style="height:${pct}%;" title="CP ${bLo}–${bHi}: ${cnt} 谱"></div>`;
+    }).join('');
+
+    // Build scale ticks
+    const tickCount = 5;
+    const ticks = [];
+    for (let i = 0; i < tickCount; i++) {
+      const val = dMin + (span * i) / (tickCount - 1);
+      ticks.push(`<span>${val.toFixed(0)}</span>`);
+    }
+    document.getElementById('cp-range-ticks').innerHTML = ticks.join('');
+
+    // Optional personal IRT capability line pin & quick preset when CSV is loaded
+    const thetaInfo = getPlayerThetaForGauge();
+    const pin = document.getElementById('cp-theta-pin');
+    const thetaBtn = document.getElementById('btn-cp-my-theta');
+    if (thetaInfo && !empty && thetaInfo.theta >= dMin && thetaInfo.theta <= dMax) {
+      const pTheta = (thetaInfo.theta - dMin) / span;
+      pin.style.left = `calc(8px + (100% - 16px) * ${pTheta.toFixed(5)})`;
+      pin.title = `我的 ${thetaInfo.gauge.toUpperCase()} 能力线: CP ${thetaInfo.theta.toFixed(1)}`;
+      pin.classList.remove('hidden');
+      thetaBtn.textContent = `我的能力线 ±6 (CP ${thetaInfo.theta.toFixed(1)})`;
+      thetaBtn.classList.remove('hidden');
+    } else {
+      pin.classList.add('hidden');
+      thetaBtn.classList.add('hidden');
+    }
+
+    const filtered = applyCpRangeFilter(preCpList);
+    updateCpRangeVisuals(filtered.length);
+  }
+
+  function scheduleCpLiveUpdate() {
+    if (cpDragRaf) return;
+    cpDragRaf = requestAnimationFrame(() => {
+      cpDragRaf = 0;
+      const filtered = applyCpRangeFilter(cpDomain.preCpList);
+      renderKpis(filtered);
+      if (!state.selectedId || !filtered.some((x) => x.id === state.selectedId)) {
+        const gKey = 's_' + state.gauge;
+        const top = [...filtered].sort((a, b) => b[gKey] - a[gKey])[0];
+        state.selectedId = top ? top.id : null;
+      }
+      renderMainView(filtered);
+      renderInspector();
+    });
+  }
+
+  function renderMainView(list) {
+    if (state.view === 'board') renderBoard(list);
+    else if (state.view === 'table') renderTable(list);
+    else if (state.view === 'delta') renderDelta(list);
+    else if (activeExplorerMode() === 'dp') renderDpOptionView(list);
+    else renderSpOptionView(list);
   }
 
   function renderKpis(list) {
@@ -747,19 +1201,7 @@
       return;
     }
 
-    // Multi-level / All-levels board! Support grouping by Official Level (★12->★1) OR by Cross-Level Clear-Power Bands!
-    const toolbar = `
-      <div class="card board-toolbar">
-        <div style="font-size:12px;color:var(--muted);">
-          已选中 <b style="color:var(--ink);">${describeSelectedLevels()}</b>，共 <b class="mono" style="color:var(--ink);">${list.length.toLocaleString()}</b> 张谱面
-        </div>
-        <div class="seg-group">
-          <button type="button" data-mgrp="level" class="seg-btn mgrp-btn ${state.multiBoardGroup === 'level' ? 'active' : ''}">按官方等级分组 (★12→★1)</button>
-          <button type="button" data-mgrp="cp" class="seg-btn mgrp-btn ${state.multiBoardGroup === 'cp' ? 'active' : ''}">按跨级 ${state.gauge.toUpperCase()} CP 区间</button>
-        </div>
-      </div>
-    `;
-
+    // Multi-level / All-levels board (controls & draggable CP range slider live in persistent #cp-range-bar)
     let groups = [];
     if (state.multiBoardGroup === 'level') {
       const lvs = [...state.levels].sort((a, b) => b - a);
@@ -769,19 +1211,30 @@
         groups.push({ key: 'lv_' + lv, badge: `★${lv}`, badgeCls: lv >= 11 ? 'tier-Sp' : (lv >= 9 ? 'tier-Ap' : 'tier-Bp'), title: `${mode.toUpperCase()} 官方等级 ★${lv}`, items, showLv: false });
       }
     } else {
-      const step = state.gauge === 'exhc' ? 10 : 8;
       const sorted = [...list].sort((a, b) => b[sKey] - a[sKey]);
-      const maxCp = Math.ceil((sorted[0]?.[sKey] || 50) / step) * step;
-      for (let hi = maxCp; hi > 0; hi -= step) {
+      const dataMax = sorted[0]?.[sKey] ?? 50;
+      const dataMin = sorted[sorted.length - 1]?.[sKey] ?? 0;
+      const effMin = state.cpMin !== null ? state.cpMin : dataMin;
+      const effMax = state.cpMax !== null ? state.cpMax : dataMax;
+      const span = Math.max(0.5, effMax - effMin);
+      const step = span <= 6 ? 1 : (span <= 14 ? 2 : (span <= 28 ? 4 : (state.gauge === 'exhc' ? 10 : 8)));
+      const topCp = Math.max(step, Math.ceil(Math.max(effMax, dataMax) / step) * step);
+      const botCp = Math.max(0, Math.floor(Math.min(effMin, dataMin) / step) * step);
+      const cpBadgeCls = (lo) => (lo >= 56 ? 'tier-Sp' : (lo >= 44 ? 'tier-S' : (lo >= 34 ? 'tier-Ap' : (lo >= 24 ? 'tier-A' : (lo >= 14 ? 'tier-Bp' : 'tier-C')))));
+
+      for (let hi = topCp; hi > botCp; hi -= step) {
         const lo = Math.max(0, hi - step);
-        const items = sorted.filter((c) => c[sKey] >= lo && c[sKey] < hi + (hi === maxCp ? 100 : 0));
+        const items = sorted.filter((c) => c[sKey] >= lo && (hi === topCp ? c[sKey] <= hi + 100 : c[sKey] < hi));
         if (items.length === 0) continue;
-        groups.push({ key: `cp_${lo}_${hi}`, badge: `${lo}–${hi}`, badgeCls: lo >= 56 ? 'tier-Sp' : (lo >= 40 ? 'tier-Ap' : 'tier-Bp'), title: `${state.gauge.toUpperCase()} 综合指数 CP ${lo} ~ ${hi}`, items, showLv: true });
+        groups.push({ key: `cp_${lo}_${hi}`, badge: `${lo}–${hi}`, badgeCls: cpBadgeCls(lo), title: `${state.gauge.toUpperCase()} 综合指数 CP ${lo} ~ ${hi}`, items, showLv: true });
+      }
+      if (groups.length === 0 && sorted.length > 0) {
+        groups.push({ key: `cp_${botCp}_${topCp}`, badge: `${botCp}–${topCp}`, badgeCls: cpBadgeCls(botCp), title: `${state.gauge.toUpperCase()} 综合指数 CP ${botCp} ~ ${topCp}`, items: sorted, showLv: true });
       }
     }
 
     const CHIP_CAP = 90;
-    let html = lampLegendHtml + toolbar;
+    let html = lampLegendHtml;
     for (const g of groups) {
       const isExpanded = state.expandedGroups.has(g.key);
       const visible = isExpanded ? g.items : g.items.slice(0, CHIP_CAP);
@@ -827,13 +1280,6 @@
     }
 
     main.innerHTML = html;
-    main.querySelectorAll('.mgrp-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.multiBoardGroup = btn.dataset.mgrp;
-        state.expandedGroups.clear();
-        renderBoard(list);
-      });
-    });
     main.querySelectorAll('.btn-expand-grp').forEach((btn) => {
       btn.addEventListener('click', () => {
         const k = btn.dataset.grp;
@@ -1323,10 +1769,14 @@
     }
 
     const textageBtnLabel = isDp ? 'Textage DP ↗' : `Textage ${state.spSide.toUpperCase()} ↗`;
+    const practiceBtnHtml = isDp ? '' : renderPracticeLink(c, false);
+    const sidePracticeNote = (!isDp && state.spSide === '2p')
+      ? '<span class="ins-action-note">自动导入 1P 源谱，练习页可切右皿</span>'
+      : '';
 
     return `
       <div class="ins-head">
-        <div>
+        <div style="min-width:0;flex:1;">
           <div class="ins-badges">
             <span class="pill diff-${c.dChar}">${c.diff} ★${c.lv}</span>
             <span class="pill">${c.kj ? '個人差' : '地力'}</span>
@@ -1336,7 +1786,12 @@
           <h2 class="ins-title">${esc(c.title)}</h2>
           <p class="ins-meta">${esc(c.artist)} · ${esc(c.verCode)} ${esc(c.ver)}</p>
         </div>
-        <a href="${c.url}" target="_blank" rel="noopener" class="btn btn-sm" style="flex-shrink:0;">${textageBtnLabel}</a>
+      </div>
+
+      <div class="ins-action-row">
+        ${practiceBtnHtml}
+        <a href="${esc(c.url)}" target="_blank" rel="noopener" class="btn btn-sm">${textageBtnLabel}</a>
+        ${sidePracticeNote}
       </div>
 
       ${playerCard}
@@ -1573,20 +2028,23 @@
             const c = q.chart;
             const r = q.rec;
             return `
-              <button type="button" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
+              <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
                   <div class="truncate" style="font-weight:700;font-size:12.5px;">
                     <span class="chip-lv mono">★${c.lv}</span>
                     <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
                     ${esc(c.title)}
                   </div>
-                  ${renderLampBadge(r.lampMeta)}
+                  <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
+                    ${renderLampBadge(r.lampMeta)}
+                    ${renderPracticeLink(c, true)}
+                  </div>
                 </div>
                 <div class="mono" style="font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;">
                   <span>${esc(q.reason)}</span>
                   <span>${recData.targetGauge.toUpperCase()} CP <b>${c['s_' + recData.targetGauge].toFixed(1)}</b> · 推荐 ${esc(c.bestOpt)}</span>
                 </div>
-              </button>
+              </div>
             `;
           }).join('')}
         </div>
@@ -1615,18 +2073,21 @@
                     const c = p.chart;
                     const ex = p.existing;
                     return `
-                      <button type="button" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
+                      <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
                         <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
                           <span class="truncate" style="font-weight:700;font-size:12px;">
                             <span class="diff-${c.dChar}">[${c.dChar}]</span> ${esc(c.title)}
                           </span>
-                          ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">未玩</span>'}
+                          <div style="display:inline-flex;align-items:center;gap:4px;flex-shrink:0;">
+                            ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">未玩</span>'}
+                            ${renderPracticeLink(c, true)}
+                          </div>
                         </div>
                         <div class="mono" style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;">
                           <span>★${c.lv} · ${esc(c.verCode)} · ${esc(c.bestOpt)}</span>
                           <span>CP ${c['s_' + recData.targetGauge].toFixed(1)} · 轴${c.radar[ax.idx]}</span>
                         </div>
-                      </button>
+                      </div>
                     `;
                   }).join('') : '<div style="font-size:11.5px;color:var(--muted);padding:6px 0;">此区间内暂未找到未清的同特征 AC 曲。</div>'}
                 </div>
@@ -1645,7 +2106,7 @@
             const c = item.chart;
             const ex = item.existing;
             return `
-              <button type="button" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
+              <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
                   <div class="truncate" style="font-weight:700;font-size:12.5px;">
                     <span class="mono" style="color:var(--muted);margin-right:4px;">${String(idx + 1).padStart(2, '0')}.</span>
@@ -1653,33 +2114,39 @@
                     <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
                     ${esc(c.title)}
                   </div>
-                  ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">新曲</span>'}
+                  <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
+                    ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">新曲</span>'}
+                    ${renderPracticeLink(c, true)}
+                  </div>
                 </div>
                 <div class="mono" style="font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;gap:6px;">
                   <span>${esc(c.verCode)} ${esc(c.ver)} · ${esc(c.tags.slice(0, 2).join('/'))} · ${esc(c.bestOpt)}</span>
                   <span>CP <b>${item.cpVal.toFixed(1)}</b> · 预计胜率 ${(item.pTarget * 100).toFixed(0)}%</span>
                 </div>
-              </button>
+              </div>
             `;
-          }).join('') : '<div style="font-size:12.5px;color:var(--muted);padding:12px 0;">该目标条件下暂未找到合适的新地力谱面。</div>'}
+          }).join('') : '<div style="font-size:12px;color:var(--muted);padding:12px 0;">该目标条件下暂未找到合适的新地力谱面。</div>'}
         </div>
       `;
     } else {
       const renderOutlierList = (arr, isGood) => arr.length ? arr.map((r) => `
-        <button type="button" class="song-rec-item modal-chart-btn" data-cid="${r.chart.id}">
+        <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${r.chart.id}">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
             <span class="truncate" style="font-weight:700;font-size:12px;">
               <span class="chip-lv mono">★${r.chart.lv}</span>
               <span class="diff-${r.chart.dChar}" style="margin:0 4px;">[${r.chart.dChar}]</span>
               ${esc(r.chart.title)}
             </span>
-            ${renderLampBadge(r.lampMeta)}
+            <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
+              ${renderLampBadge(r.lampMeta)}
+              ${renderPracticeLink(r.chart, true)}
+            </div>
           </div>
           <div class="mono" style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;">
             <span>[${esc(r.chart.tags.slice(0, 2).join('/'))}] ${r.exRate !== null ? `EX ${(r.exRate * 100).toFixed(1)}%` : '旧代灯'}${r.hasBp ? ` · ${r.bp} BP` : ''}</span>
             <span style="color:${isGood ? 'var(--pos)' : 'var(--neg)'};font-weight:700;">NC CP ${r.chart.s_nc.toFixed(1)} (模型预期 ${(r.pNc * 100).toFixed(0)}%)</span>
           </div>
-        </button>
+        </div>
       `).join('') : '<div style="font-size:12px;color:var(--muted);">暂无明显异常谱面。</div>';
 
       coachContentHtml = `
@@ -1883,7 +2350,7 @@
           <div>
             <h2 style="margin:0;font-size:16px;font-weight:800;">进步上升指导 &amp; 个性化上机练歌清单</h2>
             <div style="font-size:12px;color:var(--muted);margin-top:2px;">
-              基于你的实测能力线与 AC 在库全谱面自动筛选，点击任意曲目可展开八维雷达、压力曲线与 Textage 谱面链接。
+              基于你的实测能力线与 AC 在库全谱面自动筛选，点击任意曲目可展开八维雷达与压力曲线，SP 谱面可直接点击「练习 ↗」导入 <b>iidx-play.cee.ee</b> 练习。
             </div>
           </div>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
@@ -1935,6 +2402,8 @@
     document.getElementById('btn-jump-explorer').addEventListener('click', () => {
       state.tab = rep.mode;
       state.levels = new Set([rep.primaryLevel]);
+      state.tiers.clear();
+      resetCpRange();
       history.replaceState(null, '', '#' + state.tab);
       renderAll();
     });
@@ -1960,6 +2429,8 @@
       hideLampTooltip();
       state.tab = rep.mode;
       state.levels = new Set([lv]);
+      state.tiers.clear();
+      resetCpRange();
       state.selectedId = null;
       history.replaceState(null, '', '#' + state.tab);
       renderAll();
@@ -2031,7 +2502,19 @@
       });
     });
     root.querySelectorAll('.modal-chart-btn').forEach((btn) => {
-      btn.addEventListener('click', () => openChartModal(rep.mode, btn.dataset.cid));
+      btn.addEventListener('click', (e) => {
+        if (e.target.closest('.rec-play-link')) return;
+        openChartModal(rep.mode, btn.dataset.cid);
+      });
+      if (btn.tagName !== 'BUTTON') {
+        btn.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            if (e.target.closest('.rec-play-link')) return;
+            e.preventDefault();
+            openChartModal(rep.mode, btn.dataset.cid);
+          }
+        });
+      }
     });
   }
 
@@ -2063,7 +2546,11 @@
     renderLevelAndDiffBars();
     renderVersionFilter();
     renderGaugeBar();
-    const list = getFiltered();
+    const preTierList = getPreTierFiltered();
+    renderTierFilter(preTierList);
+    const preCpList = applyTierFilter(preTierList);
+    syncCpRangeBar(preCpList);
+    const list = applyCpRangeFilter(preCpList);
     renderKpis(list);
 
     if (!state.selectedId || !list.some((x) => x.id === state.selectedId)) {
@@ -2072,11 +2559,7 @@
       state.selectedId = top ? top.id : null;
     }
 
-    if (state.view === 'board') renderBoard(list);
-    else if (state.view === 'table') renderTable(list);
-    else if (state.view === 'delta') renderDelta(list);
-    else if (activeExplorerMode() === 'dp') renderDpOptionView(list);
-    else renderSpOptionView(list);
+    renderMainView(list);
     renderInspector();
   }
 
@@ -2096,14 +2579,17 @@
     // Mode Tabs
     document.querySelectorAll('.mode-tab').forEach((btn) => {
       btn.addEventListener('click', () => {
+        const prev = state.tab;
         const next = btn.dataset.mode;
         state.tab = next;
         state.selectedId = null;
-        if (next === 'sp' || next === 'dp') {
+        if ((next === 'sp' || next === 'dp') && prev !== next) {
           state.tag = 'ALL';
           state.spOpt = 'ALL';
           state.dpOpt = 'ALL';
           state.lampFilter = 'ALL';
+          state.tiers.clear();
+          resetCpRange();
           document.getElementById('sp-opt-filter').value = 'ALL';
           document.getElementById('dp-opt-filter').value = 'ALL';
           document.getElementById('lamp-filter').value = 'ALL';
@@ -2150,8 +2636,11 @@
     // Gauge & View buttons
     document.querySelectorAll('.g-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        state.gauge = btn.dataset.g;
-        state.sortCol = 's_' + state.gauge;
+        if (state.gauge !== btn.dataset.g) {
+          state.gauge = btn.dataset.g;
+          state.sortCol = 's_' + state.gauge;
+          resetCpRange();
+        }
         renderAll();
       });
     });
