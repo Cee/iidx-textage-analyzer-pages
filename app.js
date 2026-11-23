@@ -1546,12 +1546,12 @@
         const cnt = l.counts[item.countKey];
         if (!cnt) return '';
         const pct = (cnt / l.played) * 100;
-        return `<div class="lamp-bar-seg lamp-${item.key}" style="width:${pct.toFixed(2)}%;" title="${item.label}: ${cnt}"></div>`;
+        return `<div class="lamp-bar-seg lamp-${item.key}" data-lamp="${item.key}" style="width:${pct.toFixed(2)}%;"></div>`;
       }).join('');
       return `
         <div class="lv-prog-row">
           <button type="button" class="btn btn-sm jump-lv-btn mono" data-jump-lv="${l.lv}" title="点击跳转到难度表查看 ★${l.lv} 清灯分布">★${l.lv}</button>
-          <div class="lamp-bar-track" title="NC+ ${l.clearedNc}/${l.played} (${(l.ncRate * 100).toFixed(0)}%) · HC+ ${l.counts.HC + l.counts.EXHC + l.counts.FC}">${segs}</div>
+          <div class="lamp-bar-track" data-lv="${l.lv}">${segs}</div>
           <div class="mono" style="text-align:right;color:var(--muted);font-size:11.5px;">
             <b style="color:var(--ink);">${l.clearedNc}</b>/${l.played} <span style="opacity:0.75;">(${(l.ncRate * 100).toFixed(0)}%)</span>
           </div>
@@ -1781,9 +1781,9 @@
       <!-- Level-by-Level Clear Lamp Progress -->
       <div class="card diagnosis-box">
         <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
-          <h2 style="margin:0;font-size:14px;font-weight:800;">各等级清灯分布（点击左侧 ★N 直接跳转难度表）</h2>
+          <h2 style="margin:0;font-size:14px;font-weight:800;">各等级清灯分布（悬停查看各灯曲数，点击跳转难度表）</h2>
           <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted);">
-            ${LAMP_LEGEND_ITEMS.map((item) => `<span style="display:inline-flex;align-items:center;gap:4px;" title="${item.title}"><span class="lamp-dot lamp-static lamp-${item.key}"></span>${item.label}</span>`).join('')}
+            ${LAMP_LEGEND_ITEMS.map((item) => `<span style="display:inline-flex;align-items:center;gap:4px;"><span class="lamp-dot lamp-static lamp-${item.key}"></span>${item.label}</span>`).join('')}
           </div>
         </div>
         <div class="level-progress-grid">${levelBarsHtml}</div>
@@ -1946,14 +1946,63 @@
         }
       });
     });
+    const jumpToLv = (lv) => {
+      hideLampTooltip();
+      state.tab = rep.mode;
+      state.levels = new Set([lv]);
+      state.selectedId = null;
+      history.replaceState(null, '', '#' + state.tab);
+      renderAll();
+    };
     root.querySelectorAll('.jump-lv-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.tab = rep.mode;
-        state.levels = new Set([Number(btn.dataset.jumpLv)]);
-        state.selectedId = null;
-        history.replaceState(null, '', '#' + state.tab);
-        renderAll();
-      });
+      btn.addEventListener('click', () => jumpToLv(Number(btn.dataset.jumpLv)));
+    });
+
+    const lvSummaryMap = new Map(activeLvs.map((l) => [l.lv, l]));
+    const showBarTooltip = (track, e) => {
+      const lv = Number(track.dataset.lv);
+      const l = lvSummaryMap.get(lv);
+      if (!l) return;
+      const seg = e.target.closest('.lamp-bar-seg');
+      const activeKey = seg ? seg.dataset.lamp : null;
+      const tip = getLampTooltipEl();
+      const rowsHtml = LAMP_LEGEND_ITEMS
+        .filter((item) => l.counts[item.countKey] > 0)
+        .map((item) => {
+          const cnt = l.counts[item.countKey];
+          const pct = ((cnt / l.played) * 100).toFixed(1);
+          return `
+            <div class="lamp-tooltip-row ${activeKey === item.key ? 'is-active' : ''}">
+              <span class="lamp-tooltip-left">
+                <span class="lamp-dot lamp-static lamp-${item.key}"></span>
+                <span>${item.label}</span>
+              </span>
+              <span class="mono"><b>${cnt} 首</b> <span style="color:var(--muted);">(${pct}%)</span></span>
+            </div>
+          `;
+        })
+        .join('');
+      tip.innerHTML = `
+        <div class="lamp-tooltip-head">
+          <span>★${l.lv} 清灯曲数</span>
+          <span class="mono" style="font-weight:600;color:var(--muted);font-size:11px;">已玩 ${l.played} 首</span>
+        </div>
+        ${rowsHtml}
+      `;
+      tip.classList.remove('hidden');
+      const rect = track.getBoundingClientRect();
+      const tipRect = tip.getBoundingClientRect();
+      const left = Math.max(10, Math.min(window.innerWidth - tipRect.width - 10, e.clientX - tipRect.width / 2));
+      let top = rect.top - tipRect.height - 10;
+      if (top < 8) top = rect.bottom + 10;
+      tip.style.left = `${Math.round(left)}px`;
+      tip.style.top = `${Math.round(top)}px`;
+    };
+    root.querySelectorAll('.lamp-bar-track').forEach((track) => {
+      track.addEventListener('mouseenter', (e) => showBarTooltip(track, e));
+      track.addEventListener('mousemove', (e) => showBarTooltip(track, e));
+      track.addEventListener('mouseleave', hideLampTooltip);
+      track.addEventListener('click', () => jumpToLv(Number(track.dataset.lv)));
     });
     document.getElementById('csv-target-gauge').addEventListener('change', (e) => {
       state.csvTargetGauge = e.target.value;
@@ -1976,8 +2025,24 @@
     });
   }
 
+  let lampTooltipEl = null;
+  function getLampTooltipEl() {
+    if (!lampTooltipEl) {
+      lampTooltipEl = document.createElement('div');
+      lampTooltipEl.id = 'lamp-bar-tooltip';
+      lampTooltipEl.className = 'lamp-tooltip hidden';
+      document.body.appendChild(lampTooltipEl);
+      window.addEventListener('scroll', hideLampTooltip, { passive: true });
+    }
+    return lampTooltipEl;
+  }
+  function hideLampTooltip() {
+    if (lampTooltipEl) lampTooltipEl.classList.add('hidden');
+  }
+
   function renderAll() {
     if (!P) return;
+    hideLampTooltip();
     syncNavChrome();
     if (state.tab === 'csv') {
       renderCsvWorkspace();

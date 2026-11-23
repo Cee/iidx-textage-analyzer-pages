@@ -887,14 +887,21 @@ a:hover { text-decoration: underline; }
   border: 1px solid rgba(15, 23, 42, 0.28);
 }
 
-/* Static (non-flashing) dots used inside Level Clear Distribution card */
+/* Static (non-flashing) dots used inside Level Clear Distribution card & hover tooltip */
 .lamp-dot.lamp-static.lamp-fc {
   animation: none;
-  background: conic-gradient(#facc15 0 120deg, #38bdf8 120deg 240deg, #ffffff 240deg 360deg);
+  background: #22d3ee;
 }
 .lamp-dot.lamp-static.lamp-exhc {
   animation: none;
-  background: linear-gradient(135deg, #ef4444 50%, #facc15 50%);
+  background: #facc15;
+}
+.lamp-dot.lamp-static.lamp-nc {
+  background: #3b82f6;
+}
+:root.light .lamp-dot.lamp-static.lamp-fc,
+:root.light .lamp-dot.lamp-static.lamp-exhc {
+  border: 1px solid rgba(15, 23, 42, 0.22);
 }
 
 .lamp-badge {
@@ -933,17 +940,21 @@ a:hover { text-decoration: underline; }
   border: none;
 }
 
-/* Level Clear Distribution Bars: intentionally static (no flashing) */
+/* Level Clear Distribution Bars: clean high-contrast solid colors (no flashing) */
 .lamp-bar-seg {
   height: 100%;
+  transition: filter 0.08s ease;
+}
+.lamp-bar-seg:hover {
+  filter: brightness(1.16);
 }
 .lamp-bar-seg.lamp-f    { background-color: #ef4444; }
 .lamp-bar-seg.lamp-ac   { background-color: #c084fc; }
 .lamp-bar-seg.lamp-ec   { background-color: #4ade80; }
-.lamp-bar-seg.lamp-nc   { background-color: #38bdf8; }
+.lamp-bar-seg.lamp-nc   { background-color: #3b82f6; }
 .lamp-bar-seg.lamp-hc   { background-color: #ffffff; }
-.lamp-bar-seg.lamp-exhc { background: repeating-linear-gradient(135deg, #facc15 0 4px, #ef4444 4px 8px); }
-.lamp-bar-seg.lamp-fc   { background: linear-gradient(90deg, #facc15 0%, #38bdf8 50%, #ffffff 100%); }
+.lamp-bar-seg.lamp-exhc { background-color: #facc15; }
+.lamp-bar-seg.lamp-fc   { background-color: #22d3ee; }
 :root.light .lamp-bar-track {
   background: #cbd5e1;
   border: 1px solid var(--border-strong);
@@ -1249,11 +1260,60 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
 }
 .lamp-bar-track {
-  height: 10px;
-  border-radius: 5px;
+  height: 12px;
+  border-radius: 6px;
   background: var(--surface-2);
   overflow: hidden;
   display: flex;
+  cursor: pointer;
+}
+.lamp-bar-track:hover {
+  outline: 1px solid var(--border-strong);
+  outline-offset: 1px;
+}
+
+.lamp-tooltip {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  min-width: 196px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.lamp-tooltip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 800;
+  font-size: 12px;
+}
+.lamp-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 5px;
+  margin: 0 -5px;
+  border-radius: 5px;
+}
+.lamp-tooltip-row.is-active {
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+.lamp-tooltip-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* Axis Strength / Weakness Rows */
