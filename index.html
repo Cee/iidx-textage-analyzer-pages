@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beatmania IIDX SP / DP 全谱面物理难度表 &amp; Konami CSV 成绩诊断分析器</title>
+  <meta name="description" content="Beatmania IIDX SP (8,835谱) 与 DP (7,822谱) 全等级 EC / NC / HC / EXHC 物理难度表、历代版本筛选、DP多选项求解，支持导入 Konami 官方成绩 CSV 进行八维擅长/短板诊断与进步上升指导。" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='sans-serif' font-weight='800' font-size='13' fill='white'%3EII%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./styles.css?v=8130c6e9" />
+</head>
+<body>
+  <input id="global-csv-file" type="file" accept=".csv,text/csv" class="hidden" />
+
+  <div class="app-shell" id="app-root">
+    <!-- Top Navigation -->
+    <nav class="card top-nav" aria-label="主导航">
+      <div class="nav-left">
+        <div class="brand-mark">
+          <span class="brand-logo">IIDX</span>
+          <div class="brand-text">
+            <span class="brand-title">Textage 物理难度表 &amp; 成绩诊断</span>
+            <span class="brand-sub">SP v7 · DP v7 · 1st–34 ZINRAI</span>
+          </div>
+        </div>
+
+        <div class="mode-tabs" role="tablist">
+          <button id="mode-sp" class="mode-tab active-sp" data-mode="sp" role="tab">
+            <span>SP 单人难度表</span>
+            <span class="tab-cnt mono" id="nav-sp-cnt">...</span>
+          </button>
+          <button id="mode-dp" class="mode-tab" data-mode="dp" role="tab">
+            <span>DP 双人难度表</span>
+            <span class="tab-cnt mono" id="nav-dp-cnt">...</span>
+          </button>
+          <button id="mode-csv" class="mode-tab" data-mode="csv" role="tab">
+            <span>CSV 成绩诊断与提升</span>
+            <span class="tab-cnt mono" id="nav-csv-cnt">未导入</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <button id="btn-quick-import" class="btn btn-coach" type="button" title="导入 Konami 官方 e-amusement 成绩 CSV">
+          <span>导入 Konami CSV</span>
+        </button>
+
+        <div class="seg-group" id="scope-group" role="group" aria-label="曲库范围">
+          <button id="btn-scope-ac" class="seg-btn active" type="button">当前 AC 在库</button>
+          <button id="btn-scope-all" class="seg-btn" type="button">全部 (含削除/CS)</button>
+        </div>
+
+        <button id="btn-theme" class="btn" type="button" title="切换浅色或深色外观">暗/明主题</button>
+      </div>
+    </nav>
+
+    <!-- Boot Loading Indicator -->
+    <div id="boot-loader" class="card boot-loader">
+      <span class="spinner"></span>
+      <span>正在加载 16,657 张 SP / DP 谱面物理数据...</span>
+    </div>
+
+    <!-- Explorer Workspace (SP & DP Tabs) -->
+    <div id="explorer-workspace" class="hidden" style="display:flex;flex-direction:column;gap:14px;">
+      <header class="card explorer-header">
+        <div class="header-top">
+          <div>
+            <h1 id="page-title" class="header-title"></h1>
+            <p id="page-desc" class="header-desc"></p>
+          </div>
+        </div>
+
+        <!-- Row 1: Official Level Selector (All + Multi-select + Single) & Chart Difficulty (B/N/H/A/L) -->
+        <div class="filter-row">
+          <span class="filter-label">等级</span>
+          <div class="level-bar" id="level-bar"></div>
+          <div class="diff-filter-bar" id="diff-bar" aria-label="谱面难度类型筛选"></div>
+        </div>
+
+        <!-- Row 2: IIDX Generation (历代分类) Filter -->
+        <div class="filter-row-divider ver-filter-bar">
+          <div class="ver-bar-head">
+            <span class="filter-label">历代版本</span>
+            <button id="btn-ver-toggle" class="btn btn-sm" type="button"></button>
+            <div id="era-presets" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
+          </div>
+          <div id="ver-grid-panel" class="ver-grid-panel hidden"></div>
+        </div>
+
+        <!-- Row 3: Gauge + View + Filters + Search -->
+        <div class="filter-row filter-row-divider">
+          <div class="gauge-bar" id="gauge-bar">
+            <button data-g="ec" class="g-btn" type="button">EC 绿灯</button>
+            <button data-g="nc" class="g-btn" type="button">NC 蓝灯</button>
+            <button data-g="hc" class="g-btn" type="button">HC 红灯</button>
+            <button data-g="exhc" class="g-btn" type="button">EXHC 黄灯</button>
+          </div>
+
+          <span class="divider-v"></span>
+
+          <div class="view-bar" id="view-bar">
+            <button data-v="board" class="v-btn active" type="button">难度表视图</button>
+            <button data-v="table" class="v-btn" type="button">数据明细表</button>
+            <button data-v="delta" class="v-btn" type="button">跨血条跳档</button>
+            <button data-v="opt" id="v-btn-opt" class="v-btn hidden" type="button">DP 选项减负榜</button>
+          </div>
+
+          <div class="filter-controls-right">
+            <select id="lamp-filter" class="select-input hidden" aria-label="按个人清灯状态筛选">
+              <option value="ALL">我的灯：全部谱面</option>
+              <option value="PLAYED">仅已游玩</option>
+              <option value="UNPLAYED">仅未游玩</option>
+              <option value="FAILED_ONLY">仅 FAILED</option>
+              <option value="BELOW_NC">未蓝灯 (F/AC/EC)</option>
+              <option value="NC_PLUS">已蓝灯以上 (NC+)</option>
+              <option value="HC_PLUS">已红灯以上 (HC+)</option>
+            </select>
+            <select id="dp-opt-filter" class="select-input hidden" aria-label="按 DP 推荐选项筛选">
+              <option value="ALL">DP选项：全部</option>
+              <option value="NONREG">仅非正规推荐</option>
+              <option value="-">正規 (-)</option>
+              <option value="1M">左鏡 (1M)</option>
+              <option value="2M">右鏡 (2M)</option>
+              <option value="M/M">両鏡 (M/M)</option>
+              <option value="FLIP">FLIP 系 (F/F1M/F2M/FM/M)</option>
+              <option value="RR">R乱系 (1RR/2RR/RR)</option>
+              <option value="RAN">乱系 (1R/2R/R/R)</option>
+              <option value="SR">S乱 (SR/SR)</option>
+            </select>
+            <select id="tag-filter" class="select-input" aria-label="按谱面特征筛选"></select>
+            <input id="search-input" class="text-input" type="search" placeholder="搜索曲名 / 曲师 / 版本..." />
+          </div>
+        </div>
+      </header>
+
+      <!-- KPI Strip -->
+      <section id="kpi-strip" class="kpi-strip" aria-label="统计概览"></section>
+
+      <!-- Main Workspace + Sticky Inspector -->
+      <div class="workspace-grid">
+        <main id="main-panel" class="main-panel"></main>
+        <aside id="inspector" class="card inspector-panel" aria-label="谱面详情面板">
+          <div style="font-size:12px;color:var(--muted);text-align:center;padding:18px 0;">
+            点击左侧任意谱面查看八维能力雷达、推荐选项、全曲压力曲线与四血条评分。
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- CSV Personal Skill Diagnosis & Progression Coach Workspace -->
+    <section id="csv-workspace" class="csv-shell hidden" aria-label="Konami CSV 个人成绩诊断与提升指导"></section>
+  </div>
+
+  <!-- Chart Inspector Modal (opened when clicking any song inside CSV diagnosis/recommendations) -->
+  <div id="chart-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="谱面物理详情">
+    <div class="card modal-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span style="font-size:12px;font-weight:700;color:var(--muted);">谱面物理分析与实测详情</span>
+        <button id="btn-close-modal" class="btn btn-sm" type="button">关闭 (ESC)</button>
+      </div>
+      <div id="modal-inspector-body" style="display:flex;flex-direction:column;gap:12px;"></div>
+    </div>
+  </div>
+
+  
+  <script src="./csv_analyzer.js?v=3b7b62e4"></script>
+  <script src="./app.js?v=d4f5d50e"></script>
+</body>
+</html>
