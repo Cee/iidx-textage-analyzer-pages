@@ -807,39 +807,42 @@ a:hover { text-decoration: underline; }
   opacity: 0.7;
 }
 /* ==================== Official IIDX Clear Lamp Indicators & Animations ==================== */
+/* FC: 黄蓝白三色闪烁彩灯 (Fast Tri-Color Yellow / Blue / White Flashing) */
 @keyframes lamp-fc-bg {
+  0%, 30%   { background-color: #facc15; box-shadow: 0 0 8px rgba(250, 204, 21, 0.88); }
+  33%, 63%  { background-color: #38bdf8; box-shadow: 0 0 8px rgba(56, 189, 248, 0.90); }
+  66%, 96%  { background-color: #ffffff; box-shadow: 0 0 9px rgba(255, 255, 255, 0.95); }
+  100%      { background-color: #facc15; box-shadow: 0 0 8px rgba(250, 204, 21, 0.88); }
+}
+@keyframes lamp-fc-border {
+  0%, 30%   { border-color: #facc15; }
+  33%, 63%  { border-color: #38bdf8; }
+  66%, 96%  { border-color: #ffffff; }
+  100%      { border-color: #facc15; }
+}
+
+/* EXHC: 红黄交替闪烁 (Fast Alternating Red & Yellow Flashing) */
+@keyframes lamp-exhc-bg {
+  0%, 46%   { background-color: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.88); }
+  50%, 96%  { background-color: #facc15; box-shadow: 0 0 8px rgba(250, 204, 21, 0.90); }
+  100%      { background-color: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.88); }
+}
+@keyframes lamp-exhc-border {
+  0%, 46%   { border-color: #ef4444; }
+  50%, 96%  { border-color: #facc15; }
+  100%      { border-color: #ef4444; }
+}
+
+/* HC: 闪白色灯 (Fast Flashing White Lamp) */
+@keyframes lamp-hc-bg {
   0%, 44%   { background-color: #ffffff; box-shadow: 0 0 9px rgba(255, 255, 255, 0.95); }
   50%, 94%  { background-color: #64748b; box-shadow: none; }
   100%      { background-color: #ffffff; box-shadow: 0 0 9px rgba(255, 255, 255, 0.95); }
 }
-@keyframes lamp-fc-border {
+@keyframes lamp-hc-border {
   0%, 44%   { border-color: #ffffff; }
   50%, 94%  { border-color: #64748b; }
   100%      { border-color: #ffffff; }
-}
-
-@keyframes lamp-exhc-bg {
-  0%, 45%   { background-color: #ef4444; box-shadow: 0 0 7px rgba(239, 68, 68, 0.85); }
-  50%, 95%  { background-color: #facc15; box-shadow: 0 0 7px rgba(250, 204, 21, 0.85); }
-  100%      { background-color: #ef4444; box-shadow: 0 0 7px rgba(239, 68, 68, 0.85); }
-}
-@keyframes lamp-exhc-border {
-  0%, 45%   { border-color: #ef4444; }
-  50%, 95%  { border-color: #facc15; }
-  100%      { border-color: #ef4444; }
-}
-
-@keyframes lamp-hc-bg {
-  0%, 28%   { background-color: #facc15; box-shadow: 0 0 7px rgba(250, 204, 21, 0.85); }
-  33%, 61%  { background-color: #38bdf8; box-shadow: 0 0 7px rgba(56, 189, 248, 0.85); }
-  66%, 94%  { background-color: #ffffff; box-shadow: 0 0 8px rgba(255, 255, 255, 0.92); }
-  100%      { background-color: #facc15; box-shadow: 0 0 7px rgba(250, 204, 21, 0.85); }
-}
-@keyframes lamp-hc-border {
-  0%, 28%   { border-color: #facc15; }
-  33%, 61%  { border-color: #38bdf8; }
-  66%, 94%  { border-color: #ffffff; }
-  100%      { border-color: #facc15; }
 }
 
 .chip.has-lamp {
@@ -853,15 +856,15 @@ a:hover { text-decoration: underline; }
   top: 0;
   bottom: 0;
   width: 4px;
-  background-color: #64748b;
+  background-color: #ef4444;
 }
-.chip.lamp-edge-f::before    { background-color: #64748b; }
+.chip.lamp-edge-f::before    { background-color: #ef4444; }
 .chip.lamp-edge-ac::before   { background-color: #c084fc; }
 .chip.lamp-edge-ec::before   { background-color: #4ade80; }
 .chip.lamp-edge-nc::before   { background-color: #38bdf8; }
-.chip.lamp-edge-hc::before   { animation: lamp-hc-bg 0.90s linear infinite; }
-.chip.lamp-edge-exhc::before { animation: lamp-exhc-bg 0.62s linear infinite; }
-.chip.lamp-edge-fc::before   { animation: lamp-fc-bg 0.56s linear infinite; }
+.chip.lamp-edge-hc::before   { animation: lamp-hc-bg 0.24s linear infinite; }
+.chip.lamp-edge-exhc::before { animation: lamp-exhc-bg 0.26s linear infinite; }
+.chip.lamp-edge-fc::before   { animation: lamp-fc-bg 0.36s linear infinite; }
 :root.light .chip.lamp-edge-fc::before,
 :root.light .chip.lamp-edge-hc::before,
 :root.light .chip.lamp-edge-exhc::before {
@@ -875,17 +878,31 @@ a:hover { text-decoration: underline; }
   border-radius: 50%;
   flex-shrink: 0;
 }
-.lamp-dot.lamp-f    { background-color: #64748b; }
+.lamp-dot.lamp-f    { background-color: #ef4444; }
 .lamp-dot.lamp-ac   { background-color: #c084fc; }
 .lamp-dot.lamp-ec   { background-color: #4ade80; }
 .lamp-dot.lamp-nc   { background-color: #38bdf8; }
-.lamp-dot.lamp-hc   { animation: lamp-hc-bg 0.90s linear infinite; }
-.lamp-dot.lamp-exhc { animation: lamp-exhc-bg 0.62s linear infinite; }
-.lamp-dot.lamp-fc   { animation: lamp-fc-bg 0.56s linear infinite; }
+.lamp-dot.lamp-hc   { animation: lamp-hc-bg 0.24s linear infinite; }
+.lamp-dot.lamp-exhc { animation: lamp-exhc-bg 0.26s linear infinite; }
+.lamp-dot.lamp-fc   { animation: lamp-fc-bg 0.36s linear infinite; }
 :root.light .lamp-dot.lamp-fc,
 :root.light .lamp-dot.lamp-hc,
 :root.light .lamp-dot.lamp-exhc {
   border: 1px solid rgba(15, 23, 42, 0.28);
+}
+
+/* Static (non-flashing) dots used inside Level Clear Distribution card */
+.lamp-dot.lamp-static.lamp-fc {
+  animation: none;
+  background: conic-gradient(#facc15 0 120deg, #38bdf8 120deg 240deg, #ffffff 240deg 360deg);
+}
+.lamp-dot.lamp-static.lamp-exhc {
+  animation: none;
+  background: linear-gradient(135deg, #ef4444 50%, #facc15 50%);
+}
+.lamp-dot.lamp-static.lamp-hc {
+  animation: none;
+  background: #f8fafc;
 }
 
 .lamp-badge {
@@ -903,56 +920,63 @@ a:hover { text-decoration: underline; }
   width: 6px;
   height: 6px;
 }
-.lamp-badge-f    { background: rgba(148, 163, 184, 0.16); color: #94a3b8; }
+.lamp-badge-f    { background: rgba(239, 68, 68, 0.16);   color: #f87171; }
 .lamp-badge-ac   { background: rgba(192, 132, 252, 0.18); color: #c084fc; }
 .lamp-badge-ec   { background: rgba(74, 222, 128, 0.18);  color: #4ade80; }
 .lamp-badge-nc   { background: rgba(56, 189, 248, 0.18);  color: #38bdf8; }
-.lamp-badge-hc   { background: rgba(56, 189, 248, 0.15);  color: #f8fafc; animation: lamp-hc-border 0.90s linear infinite; }
-.lamp-badge-exhc { background: rgba(239, 68, 68, 0.16);   color: #fde047; animation: lamp-exhc-border 0.62s linear infinite; }
-.lamp-badge-fc   { background: rgba(248, 250, 252, 0.16); color: #ffffff; animation: lamp-fc-border 0.56s linear infinite; }
+.lamp-badge-hc   { background: rgba(248, 250, 252, 0.16); color: #ffffff; animation: lamp-hc-border 0.24s linear infinite; }
+.lamp-badge-exhc { background: rgba(239, 68, 68, 0.16);   color: #fde047; animation: lamp-exhc-border 0.26s linear infinite; }
+.lamp-badge-fc   { background: rgba(56, 189, 248, 0.16);  color: #f8fafc; animation: lamp-fc-border 0.36s linear infinite; }
 
-:root.light .lamp-badge-f    { background: rgba(100, 116, 139, 0.14); color: #475569; }
-:root.light .lamp-badge-ac   { background: rgba(147, 51, 234, 0.12);  color: #7e22ce; }
-:root.light .lamp-badge-ec   { background: rgba(22, 163, 74, 0.13);   color: #15803d; }
-:root.light .lamp-badge-nc   { background: rgba(2, 132, 199, 0.13);   color: #0369a1; }
-:root.light .lamp-badge-hc   { background: #1e293b; color: #f8fafc; }
+:root.light .lamp-badge-f    { background: rgba(220, 38, 38, 0.12);  color: #dc2626; }
+:root.light .lamp-badge-ac   { background: rgba(147, 51, 234, 0.12); color: #7e22ce; }
+:root.light .lamp-badge-ec   { background: rgba(22, 163, 74, 0.13);  color: #15803d; }
+:root.light .lamp-badge-nc   { background: rgba(2, 132, 199, 0.13);  color: #0369a1; }
+:root.light .lamp-badge-hc   { background: #1e293b; color: #ffffff; }
 :root.light .lamp-badge-exhc { background: #1e293b; color: #fde047; }
-:root.light .lamp-badge-fc   { background: #1e293b; color: #ffffff; }
+:root.light .lamp-badge-fc   { background: #1e293b; color: #f8fafc; }
 :root.light .lamp-badge .lamp-dot.lamp-fc,
 :root.light .lamp-badge .lamp-dot.lamp-hc,
 :root.light .lamp-badge .lamp-dot.lamp-exhc {
   border: none;
 }
 
+/* Level Clear Distribution Bars: intentionally static (no flashing) */
 .lamp-bar-seg {
   height: 100%;
 }
-.lamp-bar-seg.lamp-f    { background-color: #475569; }
+.lamp-bar-seg.lamp-f    { background-color: #ef4444; }
 .lamp-bar-seg.lamp-ac   { background-color: #c084fc; }
 .lamp-bar-seg.lamp-ec   { background-color: #4ade80; }
 .lamp-bar-seg.lamp-nc   { background-color: #38bdf8; }
-.lamp-bar-seg.lamp-hc   { animation: lamp-hc-bg 0.90s linear infinite; }
-.lamp-bar-seg.lamp-exhc { animation: lamp-exhc-bg 0.62s linear infinite; }
-.lamp-bar-seg.lamp-fc   { animation: lamp-fc-bg 0.56s linear infinite; }
-:root.light .lamp-bar-seg.lamp-f { background-color: #94a3b8; }
-:root.light .lamp-bar-track { border: 1px solid var(--border); }
+.lamp-bar-seg.lamp-hc   { background-color: #f8fafc; }
+.lamp-bar-seg.lamp-exhc { background: repeating-linear-gradient(135deg, #facc15 0 4px, #ef4444 4px 8px); }
+.lamp-bar-seg.lamp-fc   { background: linear-gradient(90deg, #facc15 0%, #38bdf8 50%, #ffffff 100%); }
+:root.light .lamp-bar-track {
+  background: #cbd5e1;
+  border: 1px solid var(--border-strong);
+}
+:root.light .lamp-bar-seg.lamp-hc {
+  background-color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.22);
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .chip.lamp-edge-fc::before, .lamp-dot.lamp-fc, .lamp-bar-seg.lamp-fc {
-    animation: none;
-    background: #ffffff;
-  }
-  .chip.lamp-edge-exhc::before, .lamp-dot.lamp-exhc, .lamp-bar-seg.lamp-exhc {
-    animation: none;
-    background: linear-gradient(135deg, #ef4444 50%, #facc15 50%);
-  }
-  .chip.lamp-edge-hc::before, .lamp-dot.lamp-hc, .lamp-bar-seg.lamp-hc {
+  .chip.lamp-edge-fc::before, .lamp-dot.lamp-fc {
     animation: none;
     background: linear-gradient(135deg, #facc15 33%, #38bdf8 33% 66%, #ffffff 66%);
   }
-  .lamp-badge-fc   { animation: none; border-color: #ffffff; }
+  .chip.lamp-edge-exhc::before, .lamp-dot.lamp-exhc {
+    animation: none;
+    background: linear-gradient(135deg, #ef4444 50%, #facc15 50%);
+  }
+  .chip.lamp-edge-hc::before, .lamp-dot.lamp-hc {
+    animation: none;
+    background: #ffffff;
+  }
+  .lamp-badge-fc   { animation: none; border-color: #38bdf8; }
   .lamp-badge-exhc { animation: none; border-color: #ef4444; }
-  .lamp-badge-hc   { animation: none; border-color: #38bdf8; }
+  .lamp-badge-hc   { animation: none; border-color: #ffffff; }
 }
 
 /* Multi-level grouping toolbar */

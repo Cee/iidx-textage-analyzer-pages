@@ -104,13 +104,13 @@
   }
 
   const LAMP_LEGEND_ITEMS = [
-    { key: 'fc',   countKey: 'FC',     label: 'FC',     title: 'FULLCOMBO（闪白灯）' },
+    { key: 'fc',   countKey: 'FC',     label: 'FC',     title: 'FULLCOMBO（黄蓝白三色彩灯）' },
     { key: 'exhc', countKey: 'EXHC',   label: 'EXHC',   title: 'EX HARD（红黄交替闪）' },
-    { key: 'hc',   countKey: 'HC',     label: 'HC',     title: 'HARD（黄蓝白三色彩灯）' },
+    { key: 'hc',   countKey: 'HC',     label: 'HC',     title: 'HARD（闪白灯）' },
     { key: 'nc',   countKey: 'NC',     label: 'NC',     title: 'CLEAR（蓝灯）' },
     { key: 'ec',   countKey: 'EC',     label: 'EC',     title: 'EASY CLEAR（绿灯）' },
     { key: 'ac',   countKey: 'ASSIST', label: 'AC',     title: 'ASSIST CLEAR（紫灯）' },
-    { key: 'f',    countKey: 'FAILED', label: 'FAILED', title: 'FAILED（未过关）' },
+    { key: 'f',    countKey: 'FAILED', label: 'FAILED', title: 'FAILED（红灯）' },
   ];
 
   function renderLampBadge(lampMeta, opts) {
@@ -1654,11 +1654,11 @@
           <div class="kpi-sub">${rep.irt.nc?.eq ? `约 ${rep.irt.nc.eq.label} · 最高 NC CP ${rep.irt.nc.maxPos}` : '需更多清灯/未过样本'}</div>
         </div>
         <div class="card csv-kpi-card">
-          <div class="kpi-label">EC 绿灯 / HC 彩灯能力估算</div>
+          <div class="kpi-label">EC 绿灯 / HC 白灯能力估算</div>
           <div class="kpi-val mono" style="font-size:15px;">
             <span style="color:#4ade80;">EC ${rep.irt.ec?.theta?.toFixed(1) ?? '—'}</span>
             <span style="color:var(--muted);margin:0 4px;">/</span>
-            <span style="color:#38bdf8;">HC ${rep.irt.hc?.theta?.toFixed(1) ?? '—'}</span>
+            <span style="color:var(--ink);">HC ${rep.irt.hc?.theta?.toFixed(1) ?? '—'}</span>
           </div>
           <div class="kpi-sub">${rep.irt.hc?.note ? esc(rep.irt.hc.note) : `EC≈${rep.irt.ec?.eq?.label || '—'} · HC最高 ${rep.irt.hc?.maxPos ?? '—'}`}</div>
         </div>
@@ -1694,7 +1694,7 @@
         <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
           <h2 style="margin:0;font-size:14px;font-weight:800;">各等级清灯分布（点击左侧 ★N 直接跳转难度表）</h2>
           <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted);">
-            ${LAMP_LEGEND_ITEMS.map((item) => `<span style="display:inline-flex;align-items:center;gap:4px;" title="${item.title}"><span class="lamp-dot lamp-${item.key}"></span>${item.label}</span>`).join('')}
+            ${LAMP_LEGEND_ITEMS.map((item) => `<span style="display:inline-flex;align-items:center;gap:4px;" title="${item.title}"><span class="lamp-dot lamp-static lamp-${item.key}"></span>${item.label}</span>`).join('')}
           </div>
         </div>
         <div class="level-progress-grid">${levelBarsHtml}</div>
@@ -1793,7 +1793,7 @@
               <select id="csv-target-gauge" class="select-input">
                 <option value="ec" ${state.csvTargetGauge === 'ec' ? 'selected' : ''}>EC 绿灯</option>
                 <option value="nc" ${state.csvTargetGauge === 'nc' ? 'selected' : ''}>NC 蓝灯</option>
-                <option value="hc" ${state.csvTargetGauge === 'hc' ? 'selected' : ''}>HC 彩灯</option>
+                <option value="hc" ${state.csvTargetGauge === 'hc' ? 'selected' : ''}>HC 白灯</option>
                 <option value="exhc" ${state.csvTargetGauge === 'exhc' ? 'selected' : ''}>EXHC 红黄灯</option>
               </select>
             </label>

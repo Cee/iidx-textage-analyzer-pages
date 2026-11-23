@@ -11,13 +11,13 @@
 
   const LAMP_META = {
     'NO PLAY':         { rank: 0, key: 'np',   short: 'NP',   label: 'NO PLAY',       color: '#64748b', bg: 'rgba(100,116,139,0.16)', clearVal: null },
-    'FAILED':          { rank: 1, key: 'f',    short: 'F',    label: 'FAILED',        color: '#94a3b8', bg: 'rgba(148,163,184,0.18)', clearVal: 0.0 },
+    'FAILED':          { rank: 1, key: 'f',    short: 'F',    label: 'FAILED',        color: '#ef4444', bg: 'rgba(239,68,68,0.18)',   clearVal: 0.0 },
     'ASSIST CLEAR':    { rank: 2, key: 'ac',   short: 'AC',   label: 'ASSIST CLEAR',  color: '#c084fc', bg: 'rgba(192,132,252,0.18)', clearVal: 0.30 },
     'EASY CLEAR':      { rank: 3, key: 'ec',   short: 'EC',   label: 'EASY CLEAR',    color: '#4ade80', bg: 'rgba(74,222,128,0.18)',  clearVal: 0.62 },
     'CLEAR':           { rank: 4, key: 'nc',   short: 'NC',   label: 'CLEAR',         color: '#38bdf8', bg: 'rgba(56,189,248,0.18)',  clearVal: 1.0 },
-    'HARD CLEAR':      { rank: 5, key: 'hc',   short: 'HC',   label: 'HARD CLEAR',    color: '#38bdf8', bg: 'rgba(56,189,248,0.16)',  clearVal: 1.15 },
-    'EX HARD CLEAR':   { rank: 6, key: 'exhc', short: 'EXHC', label: 'EX HARD CLEAR', color: '#facc15', bg: 'rgba(250,204,21,0.16)',  clearVal: 1.25 },
-    'FULLCOMBO CLEAR': { rank: 7, key: 'fc',   short: 'FC',   label: 'FULLCOMBO',     color: '#f8fafc', bg: 'rgba(248,250,252,0.18)', clearVal: 1.32 },
+    'HARD CLEAR':      { rank: 5, key: 'hc',   short: 'HC',   label: 'HARD CLEAR',    color: '#f8fafc', bg: 'rgba(248,250,252,0.16)', clearVal: 1.15 },
+    'EX HARD CLEAR':   { rank: 6, key: 'exhc', short: 'EXHC', label: 'EX HARD CLEAR', color: '#facc15', bg: 'rgba(239,68,68,0.16)',   clearVal: 1.25 },
+    'FULLCOMBO CLEAR': { rank: 7, key: 'fc',   short: 'FC',   label: 'FULLCOMBO',     color: '#38bdf8', bg: 'rgba(56,189,248,0.16)',  clearVal: 1.32 },
   };
 
   const AXIS_COACH = {
