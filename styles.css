@@ -262,6 +262,11 @@ a:hover { text-decoration: underline; }
   color: var(--ink);
   box-shadow: var(--shadow-sm);
 }
+.sp-side-group .seg-btn.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
 
 .btn {
   display: inline-flex;
@@ -318,9 +323,9 @@ a:hover { text-decoration: underline; }
 .header-top {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
 }
 .header-title {
   margin: 0;

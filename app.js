@@ -9,6 +9,7 @@
   const TIER_ORDER_LOW = ['S', 'A', 'B', 'C', 'D', 'E'];
   const CSV_STORAGE_KEY = 'iidx_textage_csv_v1';
   const THEME_STORAGE_KEY = 'iidx_textage_theme_v1';
+  const SP_SIDE_STORAGE_KEY = 'iidx_textage_sp_side_v1';
 
   const RADAR_CFG = {
     sp: {
@@ -62,6 +63,7 @@
 
   const state = {
     tab: location.hash === '#dp' ? 'dp' : (location.hash === '#csv' ? 'csv' : 'sp'),
+    spSide: '1p', // '1p' (left turntable) | '2p' (right turntable)
     levels: new Set([12]),
     levelMulti: false,
     diffs: new Set(['B', 'N', 'H', 'A', 'L']),
@@ -179,23 +181,71 @@
         obj.optReason = P.optReasons[a[32]];
         obj.p1Notes = a[33];
         obj.p2Notes = a[34];
-      } else if (a.length > 29) {
-        obj.optShort = P.optShorts[a[29]];
-        obj.fixedOpt = P.opts[a[30]];
-        obj.optGain = a[31] / 1000;
-        obj.optReason = P.optReasons[a[32]];
-        obj.leftNotes = a[33];
-        obj.rightNotes = a[34];
       } else {
-        obj.optShort = '-';
-        obj.fixedOpt = '正規 (-)';
-        obj.optGain = 0;
-        obj.optReason = '正規手型与皿键分配均衡';
-        obj.leftNotes = 0;
-        obj.rightNotes = 0;
+        const url1p = obj.url;
+        const url2p = url1p.replace(/\?1/, '?2');
+        const p1 = a.length > 29 ? {
+          bestOpt: obj.bestOpt,
+          optShort: P.optShorts[a[29]],
+          fixedOpt: P.opts[a[30]],
+          optGain: a[31] / 1000,
+          optReason: P.optReasons[a[32]],
+          leftNotes: a[33],
+          rightNotes: a[34],
+          url: url1p,
+        } : {
+          bestOpt: '正規 (-)',
+          optShort: '-',
+          fixedOpt: '正規 (-)',
+          optGain: 0,
+          optReason: '正規手型与皿键分配均衡',
+          leftNotes: 0,
+          rightNotes: 0,
+          url: url1p,
+        };
+        const p2 = a.length > 35 ? {
+          bestOpt: P.opts[a[35]],
+          optShort: P.optShorts[a[36]],
+          fixedOpt: P.opts[a[37]],
+          optGain: a[38] / 1000,
+          optReason: P.optReasons[a[39]],
+          leftNotes: a[40],
+          rightNotes: a[41],
+          url: url2p,
+        } : { ...p1, url: url2p };
+        obj._1p = p1;
+        obj._2p = p2;
+        applySpSideToChart(obj, state.spSide);
       }
       return obj;
     });
+  }
+
+  function applySpSideToChart(c, side) {
+    const src = side === '2p' ? c._2p : c._1p;
+    if (!src) return;
+    c.bestOpt = src.bestOpt;
+    c.optShort = src.optShort;
+    c.fixedOpt = src.fixedOpt;
+    c.optGain = src.optGain;
+    c.optReason = src.optReason;
+    c.leftNotes = src.leftNotes;
+    c.rightNotes = src.rightNotes;
+    c.url = src.url;
+  }
+
+  function applySpSide() {
+    for (const c of DATASETS.sp) applySpSideToChart(c, state.spSide);
+  }
+
+  function setSpSide(nextSide) {
+    const normalized = nextSide === '2p' ? '2p' : '1p';
+    if (state.spSide === normalized) return;
+    state.spSide = normalized;
+    try { localStorage.setItem(SP_SIDE_STORAGE_KEY, normalized); } catch (_) {}
+    applySpSide();
+    state.tablePage = 1;
+    renderAll();
   }
 
   function matchSpOptFilter(c, f) {
@@ -275,6 +325,7 @@
     const isSp = state.tab === 'sp';
     const isDp = state.tab === 'dp';
     const isCsv = state.tab === 'csv';
+    const showSpSide = isSp || (isCsv && (!state.csvReport || state.csvReport.mode === 'sp'));
 
     document.getElementById('mode-sp').className = 'mode-tab' + (isSp ? ' active-sp' : '');
     document.getElementById('mode-dp').className = 'mode-tab' + (isDp ? ' active-dp' : '');
@@ -284,6 +335,13 @@
     document.getElementById('explorer-workspace').classList.toggle('hidden', isCsv);
     document.getElementById('csv-workspace').classList.toggle('hidden', !isCsv);
     document.getElementById('scope-group').classList.toggle('hidden', isCsv);
+
+    const spSideGrp = document.getElementById('sp-side-group');
+    if (spSideGrp) {
+      spSideGrp.classList.toggle('hidden', !showSpSide);
+      document.getElementById('btn-sp-1p').className = 'seg-btn' + (state.spSide === '1p' ? ' active' : '');
+      document.getElementById('btn-sp-2p').className = 'seg-btn' + (state.spSide === '2p' ? ' active' : '');
+    }
 
     const csvBadge = document.getElementById('nav-csv-cnt');
     if (state.csvReport) {
@@ -299,14 +357,15 @@
   function syncExplorerChrome() {
     const mode = activeExplorerMode();
     const isDp = mode === 'dp';
+    const sideLabel = state.spSide === '2p' ? '2P 右皿' : '1P 左皿';
 
     document.getElementById('page-title').innerHTML = isDp
       ? 'Beatmania IIDX DP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag dp">DP v7 · 14K+双皿·合法多选项</span>'
-      : 'Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag">SP v7 · 官方AC四血条·多选项减负</span>';
+      : `Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag">SP v7 · ${sideLabel} · 官方AC四血条·多选项减负</span>`;
 
     document.getElementById('page-desc').innerHTML = isDp
       ? `Textage.cc 全量 DP 谱面（共 <b>${P.meta.dpTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.dpAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、历代版本筛选、AC 标准 DP 选项求解与 Konami CSV 个人清灯叠加。`
-      : `Textage.cc 全量 SP 谱面（共 <b>${P.meta.spTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.spAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、历代版本筛选、SP 多选项生物力学减负（鏡/R乱/乱/S乱）与 Konami CSV 个人清灯叠加。`;
+      : `Textage.cc 全量 SP 谱面（共 <b>${P.meta.spTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.spAc.toLocaleString()}</b> 谱）· 当前为 <b>${sideLabel}</b> 视角，支持 1P/2P 切换、SP 多选项生物力学减负（鏡/R乱/乱/S乱）与 Konami CSV 个人清灯叠加。`;
 
     const optBtn = document.getElementById('v-btn-opt');
     optBtn.textContent = isDp ? 'DP 选项减负榜' : 'SP 选项减负榜';
@@ -950,10 +1009,18 @@
 
   function renderSpOptionView(list) {
     const main = document.getElementById('main-panel');
+    const is2p = state.spSide === '2p';
+    const sideLabel = is2p ? '2P 右皿' : '1P 左皿';
+    const handKeyLabel = is2p ? '1-4/5-7键' : '1-3/4-7键';
+
     const groups = [
       {
-        title: '鏡 (MIRROR) 减负 Top 15（1P 皿侧 1/2/3 键移至右手 / 左手弱指减负）',
-        desc: '皿复合与左手偏重谱面翻转后把高密键位交给 4 指右手承接，0 随机方差、稳定提灯首选。',
+        title: is2p
+          ? '鏡 (MIRROR) 减负 Top 15（2P 皿侧 5/6/7 键移至左手 / 右手弱指减负）'
+          : '鏡 (MIRROR) 减负 Top 15（1P 皿侧 1/2/3 键移至右手 / 左手弱指减负）',
+        desc: is2p
+          ? '2P 右皿侧 5/6/7 键与右手偏重谱面翻转后把高密键位交给 4 指左手承接，0 随机方差、稳定提灯首选。'
+          : '1P 左皿侧 1/2/3 键与左手偏重谱面翻转后把高密键位交给 4 指右手承接，0 随机方差、稳定提灯首选。',
         items: list.filter((c) => c.optShort === 'MIR').sort((a, b) => b.optGain - a.optGain).slice(0, 15),
       },
       {
@@ -977,7 +1044,11 @@
     const summaryBanner = `
       <div class="card board-toolbar">
         <div style="font-size:12px;color:var(--muted);">
-          当前筛选共 <b class="mono" style="color:var(--ink);">${list.length.toLocaleString()}</b> 张 SP 谱面，其中 <b class="mono" style="color:var(--accent-ink);">${nonRegCnt.toLocaleString()}</b> 谱（${list.length ? ((nonRegCnt / list.length) * 100).toFixed(1) : '0.0'}%）推荐非正规选项（按 1P 侧 1048/対称固定 生物力学求解）
+          当前筛选共 <b class="mono" style="color:var(--ink);">${list.length.toLocaleString()}</b> 张 SP 谱面，其中 <b class="mono" style="color:var(--accent-ink);">${nonRegCnt.toLocaleString()}</b> 谱（${list.length ? ((nonRegCnt / list.length) * 100).toFixed(1) : '0.0'}%）推荐非正规选项（按 <b>${sideLabel}</b> 1048/対称固定 生物力学求解）
+        </div>
+        <div class="seg-group sp-side-group">
+          <button type="button" data-sp-side="1p" class="seg-btn sp-side-inline-btn ${!is2p ? 'active' : ''}">1P 左皿视角</button>
+          <button type="button" data-sp-side="2p" class="seg-btn sp-side-inline-btn ${is2p ? 'active' : ''}">2P 右皿视角</button>
         </div>
       </div>
     `;
@@ -1003,7 +1074,7 @@
                   ${lampPill}
                 </div>
                 <div class="mono" style="color:var(--muted);">
-                  减负 <b style="color:var(--pos);">-${(c.optGain * 100).toFixed(1)}%</b> · 1-3/4-7键 ${c.leftNotes}/${c.rightNotes} · ${esc(c.optReason)}
+                  减负 <b style="color:var(--pos);">-${(c.optGain * 100).toFixed(1)}%</b> · ${handKeyLabel} ${c.leftNotes}/${c.rightNotes} · ${esc(c.optReason)}
                 </div>
               </div>
             `;
@@ -1012,6 +1083,9 @@
       </div>
     `).join('');
 
+    main.querySelectorAll('.sp-side-inline-btn').forEach((btn) => {
+      btn.addEventListener('click', () => setSpSide(btn.dataset.spSide));
+    });
     main.querySelectorAll('.rank-row').forEach((el) => {
       el.addEventListener('click', () => { state.selectedId = el.dataset.id; renderInspector(); });
     });
@@ -1204,15 +1278,22 @@
         </div>
       `;
     } else if ((c.leftNotes || 0) + (c.rightNotes || 0) > 0) {
+      const is2p = state.spSide === '2p';
       const kTot = Math.max(1, c.leftNotes + c.rightNotes);
       const lPct = (c.leftNotes / kTot * 100).toFixed(1);
       const rPct = (c.rightNotes / kTot * 100).toFixed(1);
       const lRatio = c.leftNotes / kTot;
-      const balStr = lRatio > 0.47 ? '1P 皿侧偏重' : (lRatio < 0.37 ? '右手 4–7 偏重' : '1P 键位均衡');
+      const balStr = is2p
+        ? (lRatio < 0.53 ? '2P 皿侧偏重' : (lRatio > 0.63 ? '左手 1–4 偏重' : '2P 键位均衡'))
+        : (lRatio > 0.47 ? '1P 皿侧偏重' : (lRatio < 0.37 ? '右手 4–7 偏重' : '1P 键位均衡'));
+      const leftLabel = is2p ? '左手 1–4键' : '左手 1–3键(皿)';
+      const rightLabel = is2p ? '右手 5–7键(皿)' : '右手 4–7键';
+      const leftCol = is2p ? '#3b82f6' : '#f59e0b';
+      const rightCol = is2p ? '#f59e0b' : '#3b82f6';
       optCard = `
         <div class="inset-box" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
           <div style="display:flex;align-items:center;justify-content:space-between;">
-            <span style="font-weight:800;color:var(--accent-ink);">SP 多选项生物力学推荐 (1P 视角)</span>
+            <span style="font-weight:800;color:var(--accent-ink);">SP 多选项生物力学推荐 (${is2p ? '2P 右皿视角' : '1P 左皿视角'})</span>
             <span class="mono" style="font-size:11px;padding:2px 6px;border-radius:5px;background:var(--pos-soft);color:var(--pos);font-weight:700;">手型减负 -${(c.optGain * 100).toFixed(1)}%</span>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -1228,18 +1309,20 @@
           <div style="font-size:11.5px;color:var(--muted);">依据：${esc(c.optReason)}</div>
           <div>
             <div class="mono" style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
-              <span>左手 1–3键: <b>${c.leftNotes}</b> (${lPct}%)</span>
+              <span>${leftLabel}: <b>${c.leftNotes}</b> (${lPct}%)</span>
               <span style="color:var(--muted);">${balStr}</span>
-              <span>右手 4–7键: <b>${c.rightNotes}</b> (${rPct}%)</span>
+              <span>${rightLabel}: <b>${c.rightNotes}</b> (${rPct}%)</span>
             </div>
             <div style="height:7px;border-radius:4px;overflow:hidden;display:flex;background:var(--border);">
-              <div style="width:${lPct}%;background:#f59e0b;"></div>
-              <div style="width:${rPct}%;background:#3b82f6;"></div>
+              <div style="width:${lPct}%;background:${leftCol};"></div>
+              <div style="width:${rPct}%;background:${rightCol};"></div>
             </div>
           </div>
         </div>
       `;
     }
+
+    const textageBtnLabel = isDp ? 'Textage DP ↗' : `Textage ${state.spSide.toUpperCase()} ↗`;
 
     return `
       <div class="ins-head">
@@ -1253,7 +1336,7 @@
           <h2 class="ins-title">${esc(c.title)}</h2>
           <p class="ins-meta">${esc(c.artist)} · ${esc(c.verCode)} ${esc(c.ver)}</p>
         </div>
-        <a href="${c.url}" target="_blank" rel="noopener" class="btn btn-sm" style="flex-shrink:0;">Textage ↗</a>
+        <a href="${c.url}" target="_blank" rel="noopener" class="btn btn-sm" style="flex-shrink:0;">${textageBtnLabel}</a>
       </div>
 
       ${playerCard}
@@ -1637,6 +1720,12 @@
           </div>
         </div>
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+          ${rep.mode === 'sp' ? `
+            <div class="seg-group sp-side-group" role="group" aria-label="SP 1P/2P 侧位切换">
+              <button type="button" class="seg-btn csv-sp-side-btn ${state.spSide === '1p' ? 'active' : ''}" data-sp-side="1p">1P 左皿</button>
+              <button type="button" class="seg-btn csv-sp-side-btn ${state.spSide === '2p' ? 'active' : ''}" data-sp-side="2p">2P 右皿</button>
+            </div>
+          ` : ''}
           <div class="seg-group">
             <button type="button" class="seg-btn csv-mode-btn ${rep.mode === 'sp' ? 'active' : ''}" data-cmode="sp">按 SP 分析</button>
             <button type="button" class="seg-btn csv-mode-btn ${rep.mode === 'dp' ? 'active' : ''}" data-cmode="dp">按 DP 分析</button>
@@ -1839,6 +1928,9 @@
       history.replaceState(null, '', '#' + state.tab);
       renderAll();
     });
+    root.querySelectorAll('.csv-sp-side-btn').forEach((btn) => {
+      btn.addEventListener('click', () => setSpSide(btn.dataset.spSide));
+    });
     root.querySelectorAll('.csv-mode-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const nextMode = btn.dataset.cmode;
@@ -1958,6 +2050,10 @@
       if (f) loadFileObject(f);
     });
 
+    // SP 1P / 2P side buttons
+    document.getElementById('btn-sp-1p').addEventListener('click', () => setSpSide('1p'));
+    document.getElementById('btn-sp-2p').addEventListener('click', () => setSpSide('2p'));
+
     // Scope buttons
     document.getElementById('btn-scope-ac').addEventListener('click', () => {
       state.scope = 'ac';
@@ -2011,6 +2107,11 @@
 
   function initWithPayload(payload) {
     P = payload;
+    try {
+      if (localStorage.getItem(SP_SIDE_STORAGE_KEY) === '2p') {
+        state.spSide = '2p';
+      }
+    } catch (_) {}
     VER_INFO = P.vers.map((name, idx) => ({
       idx,
       code: (P.verCodes && P.verCodes[idx]) || String(idx + 1).padStart(2, '0'),
