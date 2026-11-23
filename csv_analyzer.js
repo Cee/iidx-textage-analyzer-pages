@@ -183,8 +183,28 @@
     return rows.filter((r) => r.length > 1 || (r.length === 1 && r[0].trim() !== ''));
   }
 
+  const HTML_ENTITY_MAP = {
+    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+    ecirc: 'ê', eacute: 'é', egrave: 'è', euml: 'ë',
+    aacute: 'á', agrave: 'à', acirc: 'â', auml: 'ä', aring: 'å',
+    oacute: 'ó', ograve: 'ò', ocirc: 'ô', ouml: 'ö', oslash: 'ø',
+    uacute: 'ú', ugrave: 'ù', ucirc: 'û', uuml: 'ü',
+    iacute: 'í', igrave: 'ì', icirc: 'î', iuml: 'ï',
+    ntilde: 'ñ', ccedil: 'ç',
+  };
+
+  function decodeHtmlEntities(s) {
+    return String(s || '').replace(/&([a-z]+|#\d+|#x[0-9a-f]+);/gi, (m, code) => {
+      const lc = code.toLowerCase();
+      if (HTML_ENTITY_MAP[lc]) return HTML_ENTITY_MAP[lc];
+      if (lc.startsWith('#x')) return String.fromCodePoint(parseInt(lc.slice(2), 16) || 32);
+      if (lc.startsWith('#')) return String.fromCodePoint(parseInt(lc.slice(1), 10) || 32);
+      return m;
+    });
+  }
+
   function normExact(s) {
-    return String(s || '')
+    return decodeHtmlEntities(s)
       .normalize('NFKC')
       .toLowerCase()
       .replace(/\s+/g, ' ')
@@ -192,18 +212,18 @@
   }
 
   function normCompact(s) {
-    return String(s || '')
+    return decodeHtmlEntities(s)
       .normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
       .normalize('NFKC')
       .toLowerCase()
-      // Strip quotes, whitespace, musical/heart symbols, dashes, tilde, bullets often differing between Konami CSV & Textage
-      .replace(/[\s"'`´’‘“”„＂＇〜～~\-‐‑‒–—―·・•♡♥❤❥♫♪♩♬★☆†‡!！?？.,。、:：;；()（）\[\]【】<>《》/\\]/g, '')
+      // Strip quotes, whitespace, musical/heart/onsen symbols, dashes, tilde, bullets often differing between CSV & Textage
+      .replace(/[\s"'`´’‘“”„＂＇〜～~\-‐‑‒–—―·・•♡♥❤❥♨♫♪♩♬★☆†‡!！?？.,。、:：;；()（）\[\]【】<>《》/\\]/g, '')
       .trim();
   }
 
   function normBaseTitle(s) {
-    const raw = String(s || '').normalize('NFKC').trim();
+    const raw = decodeHtmlEntities(s).normalize('NFKC').trim();
     const stripped = raw
       .replace(/[～〜~].*?[～〜~]/g, '')
       .replace(/\s+-[^-]+-\s*$/g, '')
@@ -212,8 +232,21 @@
     return normCompact(stripped || raw);
   }
 
+  const NUMERIC_VER_MAP = {
+    '0': '1st_sub', '1': '2nd style', '2': '2nd style', '3': '3rd style',
+    '4': '4th style', '5': '5th style', '6': '6th style', '7': '7th style',
+    '8': '8th style', '9': '9th style', '10': '10th style',
+    '11': 'iidx red', '12': 'happy sky', '13': 'distorted', '14': 'gold',
+    '15': 'dj troopers', '16': 'empress', '17': 'sirius', '18': 'resort anthem',
+    '19': 'lincle', '20': 'tricoro', '21': 'spada', '22': 'pendual',
+    '23': 'copula', '24': 'sinobuz', '25': 'cannon ballers', '26': 'rootage',
+    '27': 'heroic verse', '28': 'bistrover', '29': 'casthour', '30': 'resident',
+    '31': 'epolis', '32': 'pinky crush', '33': 'sparkle shower', '34': 'zinrai',
+  };
+
   function normVerName(v) {
     const s = String(v || '').trim().toLowerCase();
+    if (NUMERIC_VER_MAP[s]) return NUMERIC_VER_MAP[s];
     if (s === '1st&substream' || s === '1st style' || s === 'substream') return '1st_sub';
     return s.replace(/\s+/g, ' ');
   }
@@ -406,13 +439,19 @@
         consider(index.byVerBase.get(baseKey), 30);
       }
       if (candScores.size === 0) {
-        // Tier 4: Same version + artist + strong difficulty level fingerprint (catches kanji variants like 火影 / 焱影)
+        // Tier 4: Same version + artist + difficulty level fingerprint (catches kanji/Unicode homoglyphs like 火影/焱影, uən/uәn, 0/O)
         const artistCands = index.byVerArtist.get(artistKey) || [];
+        const singleMatches = [];
         for (const cand of artistCands) {
           const res = scoreSongCandidate(row, cand, 0);
           if (res.lvTotal >= 2 && res.lvMatches >= Math.max(2, res.lvTotal - 1)) {
             candScores.set(cand.songKey, { cand, ...res });
+          } else if (res.lvTotal === 1 && res.lvMatches === 1) {
+            singleMatches.push({ cand, ...res });
           }
+        }
+        if (candScores.size === 0 && singleMatches.length === 1) {
+          candScores.set(singleMatches[0].cand.songKey, singleMatches[0]);
         }
       }
 
@@ -459,7 +498,15 @@
 
         const exRate = dr.hasScore && chart.notes > 0 ? Math.min(1, dr.score / (2 * chart.notes)) : null;
         const bpRate = dr.hasBp && chart.notes > 0 ? dr.bp / chart.notes : null;
-        const pgRatio = dr.hasScore && (dr.pg + dr.gr) > 0 ? dr.pg / (dr.pg + dr.gr) : null;
+        // Detect tracker/private-server placeholder exports where PGreat=floor(EX/2) and Great=EX%2 (0 or 1)
+        const isSyntheticPgGr = dr.hasScore
+          && dr.score > 0
+          && dr.pg === Math.floor(dr.score / 2)
+          && dr.gr === (dr.score % 2)
+          && (exRate === null || exRate < 0.96);
+        const pgRatio = (dr.hasScore && !isSyntheticPgGr && (dr.pg + dr.gr) > 0)
+          ? dr.pg / (dr.pg + dr.gr)
+          : null;
 
         const rec = {
           chartId: chart.id,
@@ -472,6 +519,7 @@
           score: dr.score,
           hasScore: dr.hasScore,
           isCarryover: !dr.hasScore && !dr.hasBp,
+          isSyntheticPgGr,
           pg: dr.pg,
           gr: dr.gr,
           bp: dr.bp,
@@ -1143,7 +1191,11 @@
     const activeScored = scoredRecs.filter((r) => focusLevels.includes(r.chart.lv));
     const refScored = activeScored.length >= 5 ? activeScored : scoredRecs;
     const avgExPct = refScored.length ? (refScored.reduce((a, r) => a + r.exRate, 0) / refScored.length) * 100 : null;
-    const pgRecs = refScored.filter((r) => r.pgRatio !== null);
+    const syntheticPgCount = scoredRecs.filter((r) => r.isSyntheticPgGr).length;
+    const focusPgRecs = refScored.filter((r) => r.pgRatio !== null);
+    const allPgRecs = scoredRecs.filter((r) => r.pgRatio !== null);
+    const pgRecs = focusPgRecs.length > 0 ? focusPgRecs : allPgRecs;
+    const realPgCount = pgRecs.length;
     const avgPgRatio = pgRecs.length ? (pgRecs.reduce((a, r) => a + r.pgRatio, 0) / pgRecs.length) * 100 : null;
     const bpRecs = enriched.filter((r) => r.bpRate !== null && focusLevels.includes(r.chart.lv));
     const avgFocusBp = bpRecs.length ? bpRecs.reduce((a, r) => a + r.bp, 0) / bpRecs.length : null;
@@ -1219,9 +1271,10 @@
     if (lastKillStat.n >= 5 && lastKillStat.score <= -10) {
       summaryLines.push('结构诊断：尾杀谱（ラス殺し）失分明显，后段体力/控血偏紧，建议多打 1,000N+ 持续物量谱稳住后半段手速。');
     }
-    if (avgExPct !== null && avgPgRatio !== null) {
+    if (avgExPct !== null) {
+      const pgTxt = avgPgRatio !== null ? `，PG 率 ${avgPgRatio.toFixed(1)}%` : '';
       if (avgExPct >= 73) {
-        summaryLines.push(`判定精度优秀（主攻区均分 ${avgExPct.toFixed(1)}%，PG 率 ${avgPgRatio.toFixed(1)}%），具备直接越级推更高清灯的底子！`);
+        summaryLines.push(`判定精度优秀（主攻区均分 ${avgExPct.toFixed(1)}%${pgTxt}），具备直接越级推更高清灯的底子！`);
       } else if (avgExPct < 63) {
         summaryLines.push(`主攻区均分偏紧（${avgExPct.toFixed(1)}%），建议适度回打低 1 级谱面稳固绿字/准度与 BP 控血，再冲高灯效率更高。`);
       }
@@ -1245,6 +1298,8 @@
       focusLevels,
       avgExPct,
       avgPgRatio,
+      realPgCount,
+      syntheticPgCount,
       avgFocusBp,
       djCounts,
       axisAnalysis,

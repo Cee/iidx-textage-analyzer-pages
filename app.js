@@ -1233,7 +1233,7 @@
           <div class="mono" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
             <div>EX: <b>${esc(scoreText)}</b></div>
             <div>Miss: <b>${esc(bpText)}</b></div>
-            ${rec.hasScore ? `<div>PG / GR: <b>${rec.pg} / ${rec.gr}</b></div>` : ''}
+            ${rec.hasScore ? (rec.isSyntheticPgGr ? '<div title="源 CSV 中该谱面 PGreat=⌊EX/2⌋、Great=EX%2，属于未保存真实判定细分的占位导出值">PG / GR: <b style="color:var(--muted);">未记录 (EX推算)</b></div>' : `<div>PG / GR: <b>${rec.pg} / ${rec.gr}</b></div>`) : ''}
             <div>游玩: <b>${rec.playCount} 次</b> · ${esc(rec.lastPlayed || '—')}</div>
           </div>
           ${diffHint ? `<div style="font-size:11.5px;color:var(--ink-2);">${esc(diffHint)}</div>` : ''}
@@ -1754,7 +1754,17 @@
         <div class="card csv-kpi-card">
           <div class="kpi-label">主攻区间得分力与判定精度</div>
           <div class="kpi-val mono">${rep.avgExPct !== null ? `${rep.avgExPct.toFixed(1)}% EX` : '无分数数据'}</div>
-          <div class="kpi-sub mono">${rep.avgPgRatio !== null ? `PG率 ${rep.avgPgRatio.toFixed(1)}%` : ''}${rep.avgFocusBp !== null ? ` · 主攻均BP ${rep.avgFocusBp.toFixed(0)}` : ''}${djSummary ? ` · ${djSummary}` : ''}</div>
+          <div class="kpi-sub mono">${[
+            rep.avgPgRatio !== null
+              ? (rep.syntheticPgCount > 0
+                ? `<span title="源 CSV 中有 ${rep.syntheticPgCount} 张谱面为 PGreat=⌊EX/2⌋、Great=EX%2 的占位导出值，已自动过滤；当前按含真实判定细分的 ${rep.realPgCount} 谱计算">PG率 ${rep.avgPgRatio.toFixed(1)}% (${rep.realPgCount}谱实测)</span>`
+                : `PG率 ${rep.avgPgRatio.toFixed(1)}%`)
+              : (rep.syntheticPgCount > 0
+                ? '<span title="源 CSV 仅包含 EX 分推算的占位 PG/GR，未保存真实判定细分">PG率 — (CSV未含细分)</span>'
+                : ''),
+            rep.avgFocusBp !== null ? `主攻均BP ${rep.avgFocusBp.toFixed(0)}` : '',
+            djSummary,
+          ].filter(Boolean).join(' · ')}</div>
         </div>
         <div class="card csv-kpi-card">
           <div class="kpi-label">核心擅长 vs 首要补强</div>
