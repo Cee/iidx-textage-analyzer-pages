@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Beatmania IIDX SP / DP 全谱面物理难度表 &amp; Konami CSV 成绩诊断分析器</title>
-  <meta name="description" content="Beatmania IIDX SP (8,835谱) 与 DP (7,822谱) 全等级 EC / NC / HC / EXHC 物理难度表、历代版本筛选、DP多选项求解，支持导入 Konami 官方成绩 CSV 进行八维擅长/短板诊断与进步上升指导。" />
+  <meta name="description" content="Beatmania IIDX SP (8,835谱) 与 DP (7,822谱) 全等级 EC / NC / HC / EXHC 物理难度表、历代版本筛选、SP/DP 多选项减负榜，支持导入 Konami 官方成绩 CSV 进行八维擅长/短板诊断与进步上升指导。" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='sans-serif' font-weight='800' font-size='13' fill='white'%3EII%3C/text%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="./styles.css?v=8130c6e9" />
+  <link rel="stylesheet" href="./styles.css?v=8119aa59" />
 </head>
 <body>
   <input id="global-csv-file" type="file" accept=".csv,text/csv" class="hidden" />
@@ -101,7 +101,7 @@
             <button data-v="board" class="v-btn active" type="button">难度表视图</button>
             <button data-v="table" class="v-btn" type="button">数据明细表</button>
             <button data-v="delta" class="v-btn" type="button">跨血条跳档</button>
-            <button data-v="opt" id="v-btn-opt" class="v-btn hidden" type="button">DP 选项减负榜</button>
+            <button data-v="opt" id="v-btn-opt" class="v-btn" type="button">SP 选项减负榜</button>
           </div>
 
           <div class="filter-controls-right">
@@ -113,6 +113,15 @@
               <option value="BELOW_NC">未蓝灯 (F/AC/EC)</option>
               <option value="NC_PLUS">已蓝灯以上 (NC+)</option>
               <option value="HC_PLUS">已红灯以上 (HC+)</option>
+            </select>
+            <select id="sp-opt-filter" class="select-input" aria-label="按 SP 推荐选项筛选">
+              <option value="ALL">SP选项：全部</option>
+              <option value="NONREG">仅非正规推荐</option>
+              <option value="-">正規 (-)</option>
+              <option value="MIR">鏡 (MIRROR)</option>
+              <option value="R-RAN">R乱 (R-RAN)</option>
+              <option value="RAN">乱 (RANDOM)</option>
+              <option value="S-RAN">S乱 (S-RAN)</option>
             </select>
             <select id="dp-opt-filter" class="select-input hidden" aria-label="按 DP 推荐选项筛选">
               <option value="ALL">DP选项：全部</option>
@@ -163,6 +172,6 @@
 
   
   <script src="./csv_analyzer.js?v=3b7b62e4"></script>
-  <script src="./app.js?v=d4f5d50e"></script>
+  <script src="./app.js?v=e24a0213"></script>
 </body>
 </html>

@@ -28,6 +28,7 @@
   const TAG_OPTS = {
     sp: [
       ['ALL', '特征：全部谱面'], ['JIRIKI', '仅地力 (Core)'], ['KOJINSA', '仅个人差'],
+      ['OPT_EFF', '选项显著减负 (≥4%)'],
       ['高速乱打', '含 高速乱打'], ['二重乱打', '含 16分二重乱打'], ['階段', '含 階段/二重階段'],
       ['同時押し', '含 同時押し'], ['縦連', '含 縦連/微縦連'], ['皿', '含 皿/皿複合'],
       ['HCN', '含 HCN'], ['CN/BSS', '含 CN/BSS'], ['ソフラン', '含 ソフラン'],
@@ -72,6 +73,7 @@
     multiBoardGroup: 'level', // 'level' | 'cp'
     expandedGroups: new Set(),
     tag: 'ALL',
+    spOpt: 'ALL',
     dpOpt: 'ALL',
     lampFilter: 'ALL',
     search: '',
@@ -158,9 +160,30 @@
         obj.optReason = P.optReasons[a[32]];
         obj.p1Notes = a[33];
         obj.p2Notes = a[34];
+      } else if (a.length > 29) {
+        obj.optShort = P.optShorts[a[29]];
+        obj.fixedOpt = P.opts[a[30]];
+        obj.optGain = a[31] / 1000;
+        obj.optReason = P.optReasons[a[32]];
+        obj.leftNotes = a[33];
+        obj.rightNotes = a[34];
+      } else {
+        obj.optShort = '-';
+        obj.fixedOpt = '正規 (-)';
+        obj.optGain = 0;
+        obj.optReason = '正規手型与皿键分配均衡';
+        obj.leftNotes = 0;
+        obj.rightNotes = 0;
       }
       return obj;
     });
+  }
+
+  function matchSpOptFilter(c, f) {
+    if (f === 'ALL') return true;
+    const o = c.optShort || '-';
+    if (f === 'NONREG') return o !== '-';
+    return o === f;
   }
 
   function matchDpOptFilter(c, f) {
@@ -198,6 +221,7 @@
       if (!state.diffs.has(c.dChar)) return false;
       if (state.scope === 'ac' && !c.ac) return false;
       if (hasVerFilter && !state.selectedVers.has(c.verIdx)) return false;
+      if (mode === 'sp' && !matchSpOptFilter(c, state.spOpt)) return false;
       if (mode === 'dp' && !matchDpOptFilter(c, state.dpOpt)) return false;
       if (hasLampData && state.lampFilter !== 'ALL') {
         const rec = state.csvReport.recordMap.get(c.id);
@@ -210,7 +234,7 @@
         if (!c.tags.includes(state.tag)) return false;
       }
       if (q) {
-        const hay = (c.title + ' ' + c.artist + ' ' + c.ver + ' ' + c.verCode + ' ' + c.diff + ' ' + (c.optShort || '')).toLowerCase();
+        const hay = (c.title + ' ' + c.artist + ' ' + c.ver + ' ' + c.verCode + ' ' + c.diff + ' ' + (c.optShort || '') + ' ' + (c.bestOpt || '')).toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -259,15 +283,16 @@
 
     document.getElementById('page-title').innerHTML = isDp
       ? 'Beatmania IIDX DP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag dp">DP v7 · 14K+双皿·合法多选项</span>'
-      : 'Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag">SP v7 · 官方AC四血条·物理仿真</span>';
+      : 'Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag">SP v7 · 官方AC四血条·多选项减负</span>';
 
     document.getElementById('page-desc').innerHTML = isDp
       ? `Textage.cc 全量 DP 谱面（共 <b>${P.meta.dpTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.dpAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、历代版本筛选、AC 标准 DP 选项求解与 Konami CSV 个人清灯叠加。`
-      : `Textage.cc 全量 SP 谱面（共 <b>${P.meta.spTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.spAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、历代版本筛选、八维能力雷达与 Konami CSV 个人清灯叠加。`;
+      : `Textage.cc 全量 SP 谱面（共 <b>${P.meta.spTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.spAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、历代版本筛选、SP 多选项生物力学减负（鏡/R乱/乱/S乱）与 Konami CSV 个人清灯叠加。`;
 
-    document.getElementById('v-btn-opt').classList.toggle('hidden', !isDp);
+    const optBtn = document.getElementById('v-btn-opt');
+    optBtn.textContent = isDp ? 'DP 选项减负榜' : 'SP 选项减负榜';
+    document.getElementById('sp-opt-filter').classList.toggle('hidden', isDp);
     document.getElementById('dp-opt-filter').classList.toggle('hidden', !isDp);
-    if (!isDp && state.view === 'opt') state.view = 'board';
 
     const hasLampData = !!(state.csvReport && state.csvReport.mode === mode);
     const lampSel = document.getElementById('lamp-filter');
@@ -280,8 +305,7 @@
     if (sel.selectedIndex < 0) { state.tag = 'ALL'; sel.value = 'ALL'; }
 
     document.querySelectorAll('.v-btn').forEach((b) => {
-      const hid = !isDp && b.dataset.v === 'opt';
-      b.className = 'v-btn' + (hid ? ' hidden' : '') + (b.dataset.v === state.view ? ' active' : '');
+      b.className = 'v-btn' + (b.dataset.v === state.view ? ' active' : '');
     });
   }
 
@@ -504,7 +528,7 @@
     const sorted = [...list].sort((a, b) => b[gKey] - a[gKey]);
     const topChart = sorted[0];
     const isDp = mode === 'dp';
-    const nonRegCnt = isDp ? list.filter((c) => c.optShort !== '-').length : 0;
+    const nonRegCnt = list.filter((c) => c.optShort && c.optShort !== '-').length;
 
     // Optional personal lamp progress KPI when CSV is loaded
     let fourthCard;
@@ -528,6 +552,12 @@
         label: '非正规 DP 选项推荐率',
         val: ((nonRegCnt / n) * 100).toFixed(1) + '%',
         sub: `${nonRegCnt} 谱推荐 FLIP/鏡/乱`,
+      };
+    } else if (state.view === 'opt') {
+      fourthCard = {
+        label: '非正规 SP 选项推荐率',
+        val: ((nonRegCnt / n) * 100).toFixed(1) + '%',
+        sub: `${nonRegCnt} 谱推荐 鏡/R乱/乱/S乱`,
       };
     } else {
       fourthCard = {
@@ -564,10 +594,10 @@
 
     const lvPill = showLvBadge ? `<span class="chip-lv mono">★${c.lv}</span>` : '';
     const extraTag = c.kj ? `<span class="chip-tag">[${esc(c.tags.filter((t) => t !== '地力')[0] || '個人差')}]</span>` : '';
-    const dpOptPill = (c.mode === 'dp' && c.optShort && c.optShort !== '-' && c.optGain >= 0.03)
-      ? `<span class="chip-opt">${esc(c.optShort)}</span>` : '';
+    const optPill = (c.optShort && c.optShort !== '-' && c.optGain >= (c.mode === 'dp' ? 0.03 : 0.04))
+      ? `<span class="${c.mode === 'dp' ? 'chip-opt' : 'chip-opt-sp'}">${esc(c.optShort)}</span>` : '';
     const acMark = !c.ac ? '<span class="chip-old">旧</span>' : '';
-    const optTitle = c.mode === 'dp' ? ` | 推荐:${c.bestOpt}` : '';
+    const optTitle = c.optShort && c.optShort !== '-' ? ` | 推荐:${c.bestOpt} (-${(c.optGain * 100).toFixed(1)}%)` : '';
     const recTitle = rec
       ? ` | 我的灯:${rec.lamp}${rec.hasScore ? ` (${rec.dj || ''} ${(rec.exRate * 100).toFixed(1)}%)` : ''}${rec.hasBp ? ` BP:${rec.bp}` : ''}`
       : '';
@@ -576,7 +606,7 @@
       ${lvPill}
       <span class="diff-${c.dChar}">${diffShort}</span>
       <span class="chip-title">${esc(c.title)}</span>
-      ${dpOptPill}${extraTag}${acMark}
+      ${optPill}${extraTag}${acMark}
     </button>`;
   }
 
@@ -783,7 +813,7 @@
               ${th('HC', 's_hc')}
               ${th('EXHC', 's_exhc')}
               ${hasLampData ? th('我的成绩', 'myLamp') : ''}
-              ${isDp ? th('DP推荐选项', 'optGain') : '<th>推荐配置 / 特征</th>'}
+              ${th(isDp ? 'DP推荐选项' : 'SP推荐选项', 'optGain')}
             </tr>
           </thead>
           <tbody>
@@ -794,6 +824,7 @@
                     ? `<span class="lamp-badge" style="background:${rec.lampMeta.bg};color:${rec.lampMeta.color};">${rec.lampMeta.short}</span>${rec.exRate !== null ? ` <span style="opacity:0.8;">${(rec.exRate * 100).toFixed(1)}%</span>` : ''}${rec.hasBp ? ` <span style="color:var(--muted);">BP${rec.bp}</span>` : ''}`
                     : '<span style="color:var(--muted);">—</span>'}</td>`
                 : '';
+              const optCol = isDp ? 'var(--dp-ink)' : 'var(--accent-ink)';
               return `
                 <tr data-id="${c.id}" class="row-click ${c.id === state.selectedId ? 'selected' : ''}">
                   <td class="mono" style="color:var(--muted);">${startIdx + idx + 1}</td>
@@ -810,9 +841,7 @@
                   <td class="mono" style="white-space:nowrap;"><span class="tier-badge ${tierCls(c.tier_hc)}">${c.tier_hc}</span> <span style="opacity:0.75;">${c.s_hc.toFixed(1)}</span></td>
                   <td class="mono" style="white-space:nowrap;"><span class="tier-badge ${tierCls(c.tier_exhc)}">${c.tier_exhc}</span> <span style="opacity:0.75;">${c.s_exhc.toFixed(1)}</span></td>
                   ${recCell}
-                  <td style="color:var(--muted);">${isDp
-                    ? `<span style="color:var(--dp-ink);font-weight:700;">${esc(c.optShort)}</span>${c.optGain >= 0.02 ? ` (-${(c.optGain * 100).toFixed(1)}%)` : ''} · ${esc(c.tags.slice(0, 2).join('/'))}`
-                    : `${esc(c.bestOpt)} · ${esc(c.tags.slice(0, 2).join('/'))}`}</td>
+                  <td style="color:var(--muted);"><span style="color:${optCol};font-weight:700;">${esc(c.optShort)}</span>${c.optGain >= 0.02 ? ` (-${(c.optGain * 100).toFixed(1)}%)` : ''} · ${esc(c.tags.slice(0, 2).join('/'))}</td>
                 </tr>
               `;
             }).join('') : `<tr><td colspan="${hasLampData ? 12 : 11}" style="text-align:center;padding:28px;color:var(--muted);">没有符合当前筛选条件的谱面。</td></tr>`}
@@ -904,6 +933,75 @@
     });
   }
 
+  function renderSpOptionView(list) {
+    const main = document.getElementById('main-panel');
+    const groups = [
+      {
+        title: '鏡 (MIRROR) 减负 Top 15（1P 皿侧 1/2/3 键移至右手 / 左手弱指减负）',
+        desc: '皿复合与左手偏重谱面翻转后把高密键位交给 4 指右手承接，0 随机方差、稳定提灯首选。',
+        items: list.filter((c) => c.optShort === 'MIR').sort((a, b) => b.optGain - a.optGain).slice(0, 15),
+      },
+      {
+        title: 'R乱 (R-RANDOM) 减负 Top 15（移开皿侧冲突与边缘轴，同时保留阶段流）',
+        desc: '12 种循环位移与镜像位移在保留自然阶段顺手度的前提下，把 1/2/6/7 边缘压力移向中轴强指。',
+        items: list.filter((c) => c.optShort === 'R-RAN').sort((a, b) => b.optGain - a.optGain).slice(0, 15),
+      },
+      {
+        title: '乱 (RANDOM) 减负 Top 15（拆同手颤音 / 单手发狂 / 糟糕固定二重阶段）',
+        desc: '把 1-2/6-7 同手颤音转为双手交互、均衡左右手密度，是中高星地力谱与固定坏手型的核心减负手段。',
+        items: list.filter((c) => c.optShort === 'RAN').sort((a, b) => b.optGain - a.optGain).slice(0, 15),
+      },
+      {
+        title: 'S乱 (S-RANDOM) 拆纵连减负 Top 15（高密固定縦連 / 单键轴专治 · 低和弦防误连）',
+        desc: '逐音打散同轨连打，彻底解除固定縦連与单键轴压迫（仅在和弦密度足够低、不会引发严重随机误连的谱面上推荐）。',
+        items: list.filter((c) => c.optShort === 'S-RAN').sort((a, b) => b.optGain - a.optGain).slice(0, 15),
+      },
+    ];
+
+    const nonRegCnt = list.filter((c) => c.optShort && c.optShort !== '-').length;
+    const summaryBanner = `
+      <div class="card board-toolbar">
+        <div style="font-size:12px;color:var(--muted);">
+          当前筛选共 <b class="mono" style="color:var(--ink);">${list.length.toLocaleString()}</b> 张 SP 谱面，其中 <b class="mono" style="color:var(--accent-ink);">${nonRegCnt.toLocaleString()}</b> 谱（${list.length ? ((nonRegCnt / list.length) * 100).toFixed(1) : '0.0'}%）推荐非正规选项（按 1P 侧 1048/対称固定 生物力学求解）
+        </div>
+      </div>
+    `;
+
+    main.innerHTML = summaryBanner + groups.map((g) => `
+      <div class="card rank-card">
+        <div>
+          <h3>${g.title}</h3>
+          <p class="sub">${g.desc}</p>
+        </div>
+        <div>
+          ${g.items.length ? g.items.map((c, i) => {
+            const rec = getUserRecord('sp', c.id);
+            const lampPill = rec ? `<span class="lamp-badge" style="margin-left:5px;background:${rec.lampMeta.bg};color:${rec.lampMeta.color};">${rec.lampMeta.short}</span>` : '';
+            return `
+              <div data-id="${c.id}" class="rank-row">
+                <div style="font-weight:600;">
+                  <span class="mono" style="color:var(--muted);margin-right:6px;">${String(i + 1).padStart(2, '0')}.</span>
+                  <span class="chip-lv mono" style="margin-right:4px;">★${c.lv}</span>
+                  <span class="diff-${c.dChar}" style="margin-right:4px;">[${c.dChar}]</span>
+                  ${esc(c.title)}
+                  <span class="chip-opt-sp" style="margin-left:6px;">${esc(c.bestOpt)}</span>
+                  ${lampPill}
+                </div>
+                <div class="mono" style="color:var(--muted);">
+                  减负 <b style="color:var(--pos);">-${(c.optGain * 100).toFixed(1)}%</b> · 1-3/4-7键 ${c.leftNotes}/${c.rightNotes} · ${esc(c.optReason)}
+                </div>
+              </div>
+            `;
+          }).join('') : '<div style="color:var(--muted);font-size:12px;padding:8px 0;">当前筛选条件下暂无此类推荐谱面。</div>'}
+        </div>
+      </div>
+    `).join('');
+
+    main.querySelectorAll('.rank-row').forEach((el) => {
+      el.addEventListener('click', () => { state.selectedId = el.dataset.id; renderInspector(); });
+    });
+  }
+
   function renderDpOptionView(list) {
     const main = document.getElementById('main-panel');
     const groups = [
@@ -912,24 +1010,38 @@
       { title: 'R乱 / 両乱 / S乱 随机系推荐 Top 12（避开無理押し/無理皿/縦連）', items: list.filter((c) => c.optShort && c.optShort.includes('R')).sort((a, b) => b.optGain - a.optGain).slice(0, 12) },
     ];
 
-    main.innerHTML = groups.map((g) => `
+    const nonRegCnt = list.filter((c) => c.optShort && c.optShort !== '-').length;
+    const summaryBanner = `
+      <div class="card board-toolbar">
+        <div style="font-size:12px;color:var(--muted);">
+          当前筛选共 <b class="mono" style="color:var(--ink);">${list.length.toLocaleString()}</b> 张 DP 谱面，其中 <b class="mono" style="color:var(--dp-ink);">${nonRegCnt.toLocaleString()}</b> 谱（${list.length ? ((nonRegCnt / list.length) * 100).toFixed(1) : '0.0'}%）推荐非正规选项（仅限标准 AC DP 合法选项）
+        </div>
+      </div>
+    `;
+
+    main.innerHTML = summaryBanner + groups.map((g) => `
       <div class="card rank-card">
         <h3>${g.title}</h3>
         <div>
-          ${g.items.length ? g.items.map((c, i) => `
-            <div data-id="${c.id}" class="rank-row">
-              <div style="font-weight:600;">
-                <span class="mono" style="color:var(--muted);margin-right:6px;">${String(i + 1).padStart(2, '0')}.</span>
-                <span class="chip-lv mono" style="margin-right:4px;">★${c.lv}</span>
-                <span class="diff-${c.dChar}" style="margin-right:4px;">[${c.dChar}]</span>
-                ${esc(c.title)}
-                <span class="chip-opt" style="margin-left:6px;">${esc(c.bestOpt)}</span>
+          ${g.items.length ? g.items.map((c, i) => {
+            const rec = getUserRecord('dp', c.id);
+            const lampPill = rec ? `<span class="lamp-badge" style="margin-left:5px;background:${rec.lampMeta.bg};color:${rec.lampMeta.color};">${rec.lampMeta.short}</span>` : '';
+            return `
+              <div data-id="${c.id}" class="rank-row">
+                <div style="font-weight:600;">
+                  <span class="mono" style="color:var(--muted);margin-right:6px;">${String(i + 1).padStart(2, '0')}.</span>
+                  <span class="chip-lv mono" style="margin-right:4px;">★${c.lv}</span>
+                  <span class="diff-${c.dChar}" style="margin-right:4px;">[${c.dChar}]</span>
+                  ${esc(c.title)}
+                  <span class="chip-opt" style="margin-left:6px;">${esc(c.bestOpt)}</span>
+                  ${lampPill}
+                </div>
+                <div class="mono" style="color:var(--muted);">
+                  减负 <b style="color:var(--pos);">-${(c.optGain * 100).toFixed(1)}%</b> · P1/P2 ${c.p1Notes}/${c.p2Notes} · ${esc(c.optReason)}
+                </div>
               </div>
-              <div class="mono" style="color:var(--muted);">
-                减负 <b style="color:var(--pos);">-${(c.optGain * 100).toFixed(1)}%</b> · P1/P2 ${c.p1Notes}/${c.p2Notes} · ${esc(c.optReason)}
-              </div>
-            </div>
-          `).join('') : '<div style="color:var(--muted);font-size:12px;padding:8px 0;">当前筛选条件下暂无此类推荐谱面。</div>'}
+            `;
+          }).join('') : '<div style="color:var(--muted);font-size:12px;padding:8px 0;">当前筛选条件下暂无此类推荐谱面。</div>'}
         </div>
       </div>
     `).join('');
@@ -1040,13 +1152,13 @@
       `;
     }
 
-    let dpOptCard = '';
+    let optCard = '';
     if (isDp) {
       const pTot = Math.max(1, c.p1Notes + c.p2Notes);
       const p1Pct = (c.p1Notes / pTot * 100).toFixed(1);
       const p2Pct = (c.p2Notes / pTot * 100).toFixed(1);
       const diffStr = c.p1Notes === c.p2Notes ? '完全均衡' : (c.p1Notes > c.p2Notes ? `P1 偏重 +${c.p1Notes - c.p2Notes}` : `P2 偏重 +${c.p2Notes - c.p1Notes}`);
-      dpOptCard = `
+      optCard = `
         <div class="inset-box" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
           <div style="display:flex;align-items:center;justify-content:space-between;">
             <span style="font-weight:800;color:var(--dp-ink);">DP 多选项生物力学推荐</span>
@@ -1076,6 +1188,42 @@
           </div>
         </div>
       `;
+    } else if ((c.leftNotes || 0) + (c.rightNotes || 0) > 0) {
+      const kTot = Math.max(1, c.leftNotes + c.rightNotes);
+      const lPct = (c.leftNotes / kTot * 100).toFixed(1);
+      const rPct = (c.rightNotes / kTot * 100).toFixed(1);
+      const lRatio = c.leftNotes / kTot;
+      const balStr = lRatio > 0.47 ? '1P 皿侧偏重' : (lRatio < 0.37 ? '右手 4–7 偏重' : '1P 键位均衡');
+      optCard = `
+        <div class="inset-box" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-weight:800;color:var(--accent-ink);">SP 多选项生物力学推荐 (1P 视角)</span>
+            <span class="mono" style="font-size:11px;padding:2px 6px;border-radius:5px;background:var(--pos-soft);color:var(--pos);font-weight:700;">手型减负 -${(c.optGain * 100).toFixed(1)}%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 8px;">
+              <div style="font-size:10.5px;color:var(--muted);">全局最优选项</div>
+              <div style="font-weight:800;color:var(--accent-ink);margin-top:2px;">${esc(c.bestOpt)}</div>
+            </div>
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 8px;">
+              <div style="font-size:10.5px;color:var(--muted);">最优固定(非随机)</div>
+              <div style="font-weight:800;margin-top:2px;">${esc(c.fixedOpt)}</div>
+            </div>
+          </div>
+          <div style="font-size:11.5px;color:var(--muted);">依据：${esc(c.optReason)}</div>
+          <div>
+            <div class="mono" style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
+              <span>左手 1–3键: <b>${c.leftNotes}</b> (${lPct}%)</span>
+              <span style="color:var(--muted);">${balStr}</span>
+              <span>右手 4–7键: <b>${c.rightNotes}</b> (${rPct}%)</span>
+            </div>
+            <div style="height:7px;border-radius:4px;overflow:hidden;display:flex;background:var(--border);">
+              <div style="width:${lPct}%;background:#f59e0b;"></div>
+              <div style="width:${rPct}%;background:#3b82f6;"></div>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     return `
@@ -1084,7 +1232,7 @@
           <div class="ins-badges">
             <span class="pill diff-${c.dChar}">${c.diff} ★${c.lv}</span>
             <span class="pill">${c.kj ? '個人差' : '地力'}</span>
-            ${!isDp ? `<span class="pill" style="color:var(--accent-ink);">推荐: ${esc(c.bestOpt)}</span>` : ''}
+            <span class="pill" style="color:${isDp ? 'var(--dp-ink)' : 'var(--accent-ink)'};">推荐: ${esc(c.bestOpt)}</span>
             ${!c.ac ? '<span class="pill" style="background:var(--warn-soft);color:var(--warn);border-color:transparent;">非当前AC</span>' : ''}
           </div>
           <h2 class="ins-title">${esc(c.title)}</h2>
@@ -1111,7 +1259,7 @@
         `).join('')}
       </div>
 
-      ${dpOptCard}
+      ${optCard}
 
       <div class="stat-grid-3 mono">
         <div><span style="color:var(--muted);">BPM:</span> <b>${esc(c.bpm)}</b></div>
@@ -1749,7 +1897,8 @@
     if (state.view === 'board') renderBoard(list);
     else if (state.view === 'table') renderTable(list);
     else if (state.view === 'delta') renderDelta(list);
-    else renderDpOptionView(list);
+    else if (activeExplorerMode() === 'dp') renderDpOptionView(list);
+    else renderSpOptionView(list);
     renderInspector();
   }
 
@@ -1774,8 +1923,10 @@
         state.selectedId = null;
         if (next === 'sp' || next === 'dp') {
           state.tag = 'ALL';
+          state.spOpt = 'ALL';
           state.dpOpt = 'ALL';
           state.lampFilter = 'ALL';
+          document.getElementById('sp-opt-filter').value = 'ALL';
           document.getElementById('dp-opt-filter').value = 'ALL';
           document.getElementById('lamp-filter').value = 'ALL';
           state.tablePage = 1;
@@ -1832,6 +1983,7 @@
 
     // Dropdowns & Search
     document.getElementById('tag-filter').addEventListener('change', (e) => { state.tag = e.target.value; state.tablePage = 1; renderAll(); });
+    document.getElementById('sp-opt-filter').addEventListener('change', (e) => { state.spOpt = e.target.value; state.tablePage = 1; renderAll(); });
     document.getElementById('dp-opt-filter').addEventListener('change', (e) => { state.dpOpt = e.target.value; state.tablePage = 1; renderAll(); });
     document.getElementById('lamp-filter').addEventListener('change', (e) => { state.lampFilter = e.target.value; state.tablePage = 1; renderAll(); });
     document.getElementById('search-input').addEventListener('input', (e) => { state.search = e.target.value; state.tablePage = 1; renderAll(); });
