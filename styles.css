@@ -833,18 +833,6 @@ a:hover { text-decoration: underline; }
   100%      { border-color: #ef4444; }
 }
 
-/* HC: 闪白色灯 (Fast Flashing White Lamp) */
-@keyframes lamp-hc-bg {
-  0%, 44%   { background-color: #ffffff; box-shadow: 0 0 9px rgba(255, 255, 255, 0.95); }
-  50%, 94%  { background-color: #64748b; box-shadow: none; }
-  100%      { background-color: #ffffff; box-shadow: 0 0 9px rgba(255, 255, 255, 0.95); }
-}
-@keyframes lamp-hc-border {
-  0%, 44%   { border-color: #ffffff; }
-  50%, 94%  { border-color: #64748b; }
-  100%      { border-color: #ffffff; }
-}
-
 .chip.has-lamp {
   padding-left: 11px;
   overflow: hidden;
@@ -862,13 +850,16 @@ a:hover { text-decoration: underline; }
 .chip.lamp-edge-ac::before   { background-color: #c084fc; }
 .chip.lamp-edge-ec::before   { background-color: #4ade80; }
 .chip.lamp-edge-nc::before   { background-color: #38bdf8; }
-.chip.lamp-edge-hc::before   { animation: lamp-hc-bg 0.24s linear infinite; }
+.chip.lamp-edge-hc::before   { background-color: #ffffff; box-shadow: 0 0 5px rgba(255, 255, 255, 0.45); }
 .chip.lamp-edge-exhc::before { animation: lamp-exhc-bg 0.26s linear infinite; }
 .chip.lamp-edge-fc::before   { animation: lamp-fc-bg 0.36s linear infinite; }
 :root.light .chip.lamp-edge-fc::before,
 :root.light .chip.lamp-edge-hc::before,
 :root.light .chip.lamp-edge-exhc::before {
   border-right: 1px solid rgba(15, 23, 42, 0.20);
+}
+:root.light .chip.lamp-edge-hc::before {
+  box-shadow: none;
 }
 
 .lamp-dot {
@@ -882,7 +873,7 @@ a:hover { text-decoration: underline; }
 .lamp-dot.lamp-ac   { background-color: #c084fc; }
 .lamp-dot.lamp-ec   { background-color: #4ade80; }
 .lamp-dot.lamp-nc   { background-color: #38bdf8; }
-.lamp-dot.lamp-hc   { animation: lamp-hc-bg 0.24s linear infinite; }
+.lamp-dot.lamp-hc   { background-color: #ffffff; }
 .lamp-dot.lamp-exhc { animation: lamp-exhc-bg 0.26s linear infinite; }
 .lamp-dot.lamp-fc   { animation: lamp-fc-bg 0.36s linear infinite; }
 :root.light .lamp-dot.lamp-fc,
@@ -899,10 +890,6 @@ a:hover { text-decoration: underline; }
 .lamp-dot.lamp-static.lamp-exhc {
   animation: none;
   background: linear-gradient(135deg, #ef4444 50%, #facc15 50%);
-}
-.lamp-dot.lamp-static.lamp-hc {
-  animation: none;
-  background: #f8fafc;
 }
 
 .lamp-badge {
@@ -924,7 +911,7 @@ a:hover { text-decoration: underline; }
 .lamp-badge-ac   { background: rgba(192, 132, 252, 0.18); color: #c084fc; }
 .lamp-badge-ec   { background: rgba(74, 222, 128, 0.18);  color: #4ade80; }
 .lamp-badge-nc   { background: rgba(56, 189, 248, 0.18);  color: #38bdf8; }
-.lamp-badge-hc   { background: rgba(248, 250, 252, 0.16); color: #ffffff; animation: lamp-hc-border 0.24s linear infinite; }
+.lamp-badge-hc   { background: rgba(248, 250, 252, 0.16); color: #ffffff; border-color: rgba(255, 255, 255, 0.65); }
 .lamp-badge-exhc { background: rgba(239, 68, 68, 0.16);   color: #fde047; animation: lamp-exhc-border 0.26s linear infinite; }
 .lamp-badge-fc   { background: rgba(56, 189, 248, 0.16);  color: #f8fafc; animation: lamp-fc-border 0.36s linear infinite; }
 
@@ -932,7 +919,7 @@ a:hover { text-decoration: underline; }
 :root.light .lamp-badge-ac   { background: rgba(147, 51, 234, 0.12); color: #7e22ce; }
 :root.light .lamp-badge-ec   { background: rgba(22, 163, 74, 0.13);  color: #15803d; }
 :root.light .lamp-badge-nc   { background: rgba(2, 132, 199, 0.13);  color: #0369a1; }
-:root.light .lamp-badge-hc   { background: #1e293b; color: #ffffff; }
+:root.light .lamp-badge-hc   { background: #1e293b; color: #ffffff; border-color: #94a3b8; }
 :root.light .lamp-badge-exhc { background: #1e293b; color: #fde047; }
 :root.light .lamp-badge-fc   { background: #1e293b; color: #f8fafc; }
 :root.light .lamp-badge .lamp-dot.lamp-fc,
@@ -949,7 +936,7 @@ a:hover { text-decoration: underline; }
 .lamp-bar-seg.lamp-ac   { background-color: #c084fc; }
 .lamp-bar-seg.lamp-ec   { background-color: #4ade80; }
 .lamp-bar-seg.lamp-nc   { background-color: #38bdf8; }
-.lamp-bar-seg.lamp-hc   { background-color: #f8fafc; }
+.lamp-bar-seg.lamp-hc   { background-color: #ffffff; }
 .lamp-bar-seg.lamp-exhc { background: repeating-linear-gradient(135deg, #facc15 0 4px, #ef4444 4px 8px); }
 .lamp-bar-seg.lamp-fc   { background: linear-gradient(90deg, #facc15 0%, #38bdf8 50%, #ffffff 100%); }
 :root.light .lamp-bar-track {
@@ -970,13 +957,8 @@ a:hover { text-decoration: underline; }
     animation: none;
     background: linear-gradient(135deg, #ef4444 50%, #facc15 50%);
   }
-  .chip.lamp-edge-hc::before, .lamp-dot.lamp-hc {
-    animation: none;
-    background: #ffffff;
-  }
   .lamp-badge-fc   { animation: none; border-color: #38bdf8; }
   .lamp-badge-exhc { animation: none; border-color: #ef4444; }
-  .lamp-badge-hc   { animation: none; border-color: #ffffff; }
 }
 
 /* Multi-level grouping toolbar */

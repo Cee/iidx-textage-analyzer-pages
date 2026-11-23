@@ -106,7 +106,7 @@
   const LAMP_LEGEND_ITEMS = [
     { key: 'fc',   countKey: 'FC',     label: 'FC',     title: 'FULLCOMBO（黄蓝白三色彩灯）' },
     { key: 'exhc', countKey: 'EXHC',   label: 'EXHC',   title: 'EX HARD（红黄交替闪）' },
-    { key: 'hc',   countKey: 'HC',     label: 'HC',     title: 'HARD（闪白灯）' },
+    { key: 'hc',   countKey: 'HC',     label: 'HC',     title: 'HARD（纯白灯）' },
     { key: 'nc',   countKey: 'NC',     label: 'NC',     title: 'CLEAR（蓝灯）' },
     { key: 'ec',   countKey: 'EC',     label: 'EC',     title: 'EASY CLEAR（绿灯）' },
     { key: 'ac',   countKey: 'ASSIST', label: 'AC',     title: 'ASSIST CLEAR（紫灯）' },
