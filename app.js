@@ -454,7 +454,7 @@
 
     document.getElementById('page-title').innerHTML = isDp
       ? '<span class="lbl-full">Beatmania IIDX DP 全谱面 EC / NC / HC / EXHC 难度表</span><span class="lbl-short">DP 物理难度表</span> <span class="ver-tag dp">DP v7 · 14K+双皿·合法多选项</span>'
-      : `<span class="lbl-full">Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表</span><span class="lbl-short">SP 物理难度表</span> <span class="ver-tag">SP v7 · ${sideLabel} · 官方AC四血条·多选项减负</span>`;
+      : `<span class="lbl-full">Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表</span><span class="lbl-short">SP 物理难度表</span> <span class="ver-tag">SP v8 · ${sideLabel} · 官方AC四血条·多选项减负</span>`;
 
     document.getElementById('page-desc').innerHTML = isDp
       ? `Textage.cc 全量 DP 谱面（共 <b>${P.meta.dpTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.dpAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、分档筛选、历代版本筛选、AC 标准 DP 选项求解与 Konami CSV 个人清灯叠加。`
