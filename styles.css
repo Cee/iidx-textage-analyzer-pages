@@ -1969,6 +1969,17 @@ body.modal-open {
   background: var(--surface-2);
 }
 
+.site-footer {
+  text-align: center;
+  padding: 10px 12px 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.site-footer strong {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
 /* Mobile Floating Quick Actions (搜歌 / 顶部) */
 .mobile-fab {
   position: fixed;
