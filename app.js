@@ -65,6 +65,12 @@
   let cpDomain = { min: 0, max: 100, preCpList: [], bins: 32 };
   let cpBarReady = false;
   let cpDragRaf = 0;
+  const mobileInspectorMQ = window.matchMedia('(max-width: 1180px)');
+  const mobileSmallMQ = window.matchMedia('(max-width: 768px)');
+  const fineHoverMQ = window.matchMedia('(hover: hover) and (pointer: fine)');
+  function isCompactInspector() {
+    return mobileInspectorMQ.matches;
+  }
 
   const state = {
     tab: location.hash === '#dp' ? 'dp' : (location.hash === '#csv' ? 'csv' : 'sp'),
@@ -77,6 +83,7 @@
     cpMax: null, // null = full upper bound in multi-level mode
     selectedVers: new Set(), // empty = ALL versions
     verPanelOpen: false,
+    mobileFiltersOpen: false,
     gauge: 'hc',
     scope: 'ac',
     view: 'board',
@@ -422,21 +429,39 @@
     document.getElementById('btn-scope-all').className = 'seg-btn' + (state.scope === 'all' ? ' active' : '');
   }
 
+  function syncMobileFilterButton() {
+    const mode = activeExplorerMode();
+    const hdr = document.getElementById('explorer-header');
+    const btn = document.getElementById('btn-mobile-filters');
+    if (!hdr || !btn) return;
+    let activeCnt = 0;
+    if (state.diffs.size < 5) activeCnt++;
+    if (state.selectedVers.size > 0) activeCnt++;
+    if (state.csvReport && state.csvReport.mode === mode && state.lampFilter !== 'ALL') activeCnt++;
+    if ((mode === 'sp' ? state.spOpt : state.dpOpt) !== 'ALL') activeCnt++;
+    if (state.tag !== 'ALL') activeCnt++;
+
+    hdr.classList.toggle('mobile-filters-open', state.mobileFiltersOpen);
+    btn.classList.toggle('has-active', activeCnt > 0 || state.mobileFiltersOpen);
+    btn.setAttribute('aria-expanded', state.mobileFiltersOpen ? 'true' : 'false');
+    btn.textContent = `筛选${activeCnt > 0 ? ` (${activeCnt})` : ''} ${state.mobileFiltersOpen ? '▴' : '▾'}`;
+  }
+
   function syncExplorerChrome() {
     const mode = activeExplorerMode();
     const isDp = mode === 'dp';
     const sideLabel = state.spSide === '2p' ? '2P 右皿' : '1P 左皿';
 
     document.getElementById('page-title').innerHTML = isDp
-      ? 'Beatmania IIDX DP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag dp">DP v7 · 14K+双皿·合法多选项</span>'
-      : `Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表 <span class="ver-tag">SP v7 · ${sideLabel} · 官方AC四血条·多选项减负</span>`;
+      ? '<span class="lbl-full">Beatmania IIDX DP 全谱面 EC / NC / HC / EXHC 难度表</span><span class="lbl-short">DP 物理难度表</span> <span class="ver-tag dp">DP v7 · 14K+双皿·合法多选项</span>'
+      : `<span class="lbl-full">Beatmania IIDX SP 全谱面 EC / NC / HC / EXHC 难度表</span><span class="lbl-short">SP 物理难度表</span> <span class="ver-tag">SP v7 · ${sideLabel} · 官方AC四血条·多选项减负</span>`;
 
     document.getElementById('page-desc').innerHTML = isDp
       ? `Textage.cc 全量 DP 谱面（共 <b>${P.meta.dpTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.dpAc.toLocaleString()}</b> 谱）· 支持难度全选/多选、分档筛选、历代版本筛选、AC 标准 DP 选项求解与 Konami CSV 个人清灯叠加。`
       : `Textage.cc 全量 SP 谱面（共 <b>${P.meta.spTotal.toLocaleString()}</b> 谱 / AC 在库 <b>${P.meta.spAc.toLocaleString()}</b> 谱）· 当前为 <b>${sideLabel}</b> 视角，支持 1P/2P 切换、分档与跨级 CP 细选、SP 多选项减负与一键导入 <b>iidx-play.cee.ee</b> 练习。`;
 
     const optBtn = document.getElementById('v-btn-opt');
-    optBtn.textContent = isDp ? 'DP 选项减负榜' : 'SP 选项减负榜';
+    optBtn.innerHTML = `<span class="lbl-full">${isDp ? 'DP 选项减负榜' : 'SP 选项减负榜'}</span><span class="lbl-short">选项榜</span>`;
     document.getElementById('sp-opt-filter').classList.toggle('hidden', isDp);
     document.getElementById('dp-opt-filter').classList.toggle('hidden', !isDp);
 
@@ -453,8 +478,10 @@
     document.querySelectorAll('.v-btn').forEach((b) => {
       b.className = 'v-btn' + (b.dataset.v === state.view ? ' active' : '');
     });
+    syncMobileFilterButton();
   }
 
+  let lastCenteredLvKey = '';
   function renderLevelAndDiffBars() {
     const mode = activeExplorerMode();
     const list = DATASETS[mode];
@@ -481,7 +508,23 @@
     html += `<button id="btn-lv-multi" type="button" class="lv-btn multi-toggle ${state.levelMulti ? 'active' : ''}" title="开启后可点击任意多个等级组合查看">${state.levelMulti ? '多选: 开' : '+ 多选'}</button>`;
 
     const bar = document.getElementById('level-bar');
+    const prevScrollLeft = bar.scrollLeft;
     bar.innerHTML = html;
+
+    if (mobileSmallMQ.matches) {
+      const lvKey = state.levels.size === 1 ? `lv_${[...state.levels][0]}` : (isAllSelected ? 'all' : 'multi');
+      if (lvKey !== lastCenteredLvKey) {
+        lastCenteredLvKey = lvKey;
+        const targetBtn = state.levels.size === 1
+          ? bar.querySelector(`[data-lv="${[...state.levels][0]}"]`)
+          : (isAllSelected ? document.getElementById('btn-lv-all') : null);
+        if (targetBtn) {
+          bar.scrollLeft = Math.max(0, targetBtn.offsetLeft - (bar.clientWidth - targetBtn.offsetWidth) / 2);
+        }
+      } else {
+        bar.scrollLeft = prevScrollLeft;
+      }
+    }
 
     document.getElementById('btn-lv-all').addEventListener('click', () => {
       if (state.levels.size === 12) {
@@ -1319,6 +1362,7 @@
 
     main.innerHTML = `
       <div class="card table-wrap">
+        <div class="table-mobile-hint">可左右滑动查看全部列 · 点击任意行弹出谱面详情</div>
         <table class="data-table">
           <thead>
             <tr>
@@ -1391,9 +1435,9 @@
     });
     main.querySelectorAll('.row-click').forEach((el) => {
       el.addEventListener('click', () => {
-        state.selectedId = el.dataset.id;
-        renderTable(list);
-        renderInspector();
+        main.querySelectorAll('.row-click.selected').forEach((r) => r.classList.remove('selected'));
+        el.classList.add('selected');
+        selectChart(el.dataset.id, true);
       });
     });
     const prevBtn = document.getElementById('pg-prev');
@@ -1449,7 +1493,7 @@
     `).join('');
 
     main.querySelectorAll('.rank-row').forEach((el) => {
-      el.addEventListener('click', () => { state.selectedId = el.dataset.id; renderInspector(); });
+      el.addEventListener('click', () => selectChart(el.dataset.id, true));
     });
   }
 
@@ -1533,7 +1577,7 @@
       btn.addEventListener('click', () => setSpSide(btn.dataset.spSide));
     });
     main.querySelectorAll('.rank-row').forEach((el) => {
-      el.addEventListener('click', () => { state.selectedId = el.dataset.id; renderInspector(); });
+      el.addEventListener('click', () => selectChart(el.dataset.id, true));
     });
   }
 
@@ -1582,7 +1626,7 @@
     `).join('');
 
     main.querySelectorAll('.rank-row').forEach((el) => {
-      el.addEventListener('click', () => { state.selectedId = el.dataset.id; renderInspector(); });
+      el.addEventListener('click', () => selectChart(el.dataset.id, true));
     });
   }
 
@@ -1850,24 +1894,48 @@
     panel.innerHTML = buildInspectorHtml(c);
   }
 
+  function selectChart(chartId, openPopup) {
+    state.selectedId = chartId;
+    renderInspector();
+    if (openPopup && isCompactInspector()) {
+      openChartModal(activeExplorerMode(), chartId);
+    }
+  }
+
+  function isModalOpen() {
+    const m = document.getElementById('chart-modal');
+    return !!(m && !m.classList.contains('hidden'));
+  }
+
   function openChartModal(mode, chartId) {
     const c = CHART_BY_ID[mode].get(chartId);
     if (!c) return;
-    document.getElementById('modal-inspector-body').innerHTML = buildInspectorHtml(c);
+    hideLampTooltip();
+    const body = document.getElementById('modal-inspector-body');
+    const card = document.getElementById('chart-modal-card');
+    body.innerHTML = buildInspectorHtml(c);
+    body.scrollTop = 0;
+    if (card) card.style.transform = '';
     document.getElementById('chart-modal').classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    syncMobileFab();
   }
 
   function closeChartModal() {
-    document.getElementById('chart-modal').classList.add('hidden');
+    const modal = document.getElementById('chart-modal');
+    const card = document.getElementById('chart-modal-card');
+    if (modal) modal.classList.add('hidden');
+    if (card) card.style.transform = '';
+    document.body.classList.remove('modal-open');
+    syncMobileFab();
   }
 
   function bindChipClicks() {
     document.querySelectorAll('.chip').forEach((btn) => {
       btn.addEventListener('click', () => {
-        state.selectedId = btn.dataset.id;
         document.querySelectorAll('.chip.selected').forEach((x) => x.classList.remove('selected'));
         btn.classList.add('selected');
-        renderInspector();
+        selectChart(btn.dataset.id, true);
       });
     });
   }
@@ -2443,11 +2511,12 @@
     });
 
     const lvSummaryMap = new Map(activeLvs.map((l) => [l.lv, l]));
-    const showBarTooltip = (track, e) => {
+    let activeTouchLv = null;
+    const showBarTooltip = (track, e, isTouchTap) => {
       const lv = Number(track.dataset.lv);
       const l = lvSummaryMap.get(lv);
       if (!l) return;
-      const seg = e.target.closest('.lamp-bar-seg');
+      const seg = e.target && e.target.closest ? e.target.closest('.lamp-bar-seg') : null;
       const activeKey = seg ? seg.dataset.lamp : null;
       const tip = getLampTooltipEl();
       const rowsHtml = LAMP_LEGEND_ITEMS
@@ -2466,27 +2535,52 @@
           `;
         })
         .join('');
+      const touchHint = isTouchTap
+        ? `<div style="margin-top:6px;padding-top:5px;border-top:1px solid var(--border);font-size:10.5px;color:var(--muted);">点击左侧 ★${l.lv} 按钮可跳转难度表</div>`
+        : '';
       tip.innerHTML = `
         <div class="lamp-tooltip-head">
           <span>★${l.lv} 清灯曲数</span>
           <span class="mono" style="font-weight:600;color:var(--muted);font-size:11px;">已玩 ${l.played} 首</span>
         </div>
         ${rowsHtml}
+        ${touchHint}
       `;
       tip.classList.remove('hidden');
       const rect = track.getBoundingClientRect();
       const tipRect = tip.getBoundingClientRect();
-      const left = Math.max(10, Math.min(window.innerWidth - tipRect.width - 10, e.clientX - tipRect.width / 2));
+      const anchorX = Number.isFinite(e.clientX) && e.clientX > 0 ? e.clientX : (rect.left + rect.width / 2);
+      const left = Math.max(10, Math.min(window.innerWidth - tipRect.width - 10, anchorX - tipRect.width / 2));
       let top = rect.top - tipRect.height - 10;
       if (top < 8) top = rect.bottom + 10;
       tip.style.left = `${Math.round(left)}px`;
       tip.style.top = `${Math.round(top)}px`;
     };
     root.querySelectorAll('.lamp-bar-track').forEach((track) => {
-      track.addEventListener('mouseenter', (e) => showBarTooltip(track, e));
-      track.addEventListener('mousemove', (e) => showBarTooltip(track, e));
-      track.addEventListener('mouseleave', hideLampTooltip);
-      track.addEventListener('click', () => jumpToLv(Number(track.dataset.lv)));
+      track.addEventListener('mouseenter', (e) => {
+        if (fineHoverMQ.matches) showBarTooltip(track, e, false);
+      });
+      track.addEventListener('mousemove', (e) => {
+        if (fineHoverMQ.matches) showBarTooltip(track, e, false);
+      });
+      track.addEventListener('mouseleave', () => {
+        if (fineHoverMQ.matches) hideLampTooltip();
+      });
+      track.addEventListener('click', (e) => {
+        const lv = Number(track.dataset.lv);
+        if (fineHoverMQ.matches) {
+          jumpToLv(lv);
+          return;
+        }
+        e.stopPropagation();
+        if (activeTouchLv === lv && lampTooltipEl && !lampTooltipEl.classList.contains('hidden')) {
+          activeTouchLv = null;
+          hideLampTooltip();
+        } else {
+          activeTouchLv = lv;
+          showBarTooltip(track, e, true);
+        }
+      });
     });
     document.getElementById('csv-target-gauge').addEventListener('change', (e) => {
       state.csvTargetGauge = e.target.value;
@@ -2529,11 +2623,29 @@
       lampTooltipEl.className = 'lamp-tooltip hidden';
       document.body.appendChild(lampTooltipEl);
       window.addEventListener('scroll', hideLampTooltip, { passive: true });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.lamp-bar-track')) hideLampTooltip();
+      });
     }
     return lampTooltipEl;
   }
   function hideLampTooltip() {
     if (lampTooltipEl) lampTooltipEl.classList.add('hidden');
+  }
+
+  function syncThemeColorMeta() {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+    meta.setAttribute('content', document.documentElement.classList.contains('light') ? '#f4f7fb' : '#0b1018');
+  }
+
+  function syncMobileFab() {
+    const fab = document.getElementById('mobile-fab');
+    const searchBtn = document.getElementById('btn-fab-search');
+    if (!fab) return;
+    const show = mobileSmallMQ.matches && window.scrollY > 320 && !isModalOpen();
+    fab.classList.toggle('hidden', !show);
+    if (searchBtn) searchBtn.classList.toggle('hidden', state.tab === 'csv');
   }
 
   function renderAll() {
@@ -2542,6 +2654,7 @@
     syncNavChrome();
     if (state.tab === 'csv') {
       renderCsvWorkspace();
+      syncMobileFab();
       return;
     }
 
@@ -2564,18 +2677,21 @@
 
     renderMainView(list);
     renderInspector();
+    syncMobileFab();
   }
 
   function bindGlobalEvents() {
-    // Theme persistence
+    // Theme persistence & mobile status bar theme-color sync
     try {
       if (localStorage.getItem(THEME_STORAGE_KEY) === 'light') {
         document.documentElement.classList.add('light');
       }
     } catch (_) {}
+    syncThemeColorMeta();
 
     document.getElementById('btn-theme').addEventListener('click', () => {
       const isLight = document.documentElement.classList.toggle('light');
+      syncThemeColorMeta();
       try { localStorage.setItem(THEME_STORAGE_KEY, isLight ? 'light' : 'dark'); } catch (_) {}
     });
 
@@ -2630,6 +2746,15 @@
       renderAll();
     });
 
+    // Mobile collapsible secondary filters toggle
+    const mobileFilterBtn = document.getElementById('btn-mobile-filters');
+    if (mobileFilterBtn) {
+      mobileFilterBtn.addEventListener('click', () => {
+        state.mobileFiltersOpen = !state.mobileFiltersOpen;
+        syncMobileFilterButton();
+      });
+    }
+
     // Version drawer toggle
     document.getElementById('btn-ver-toggle').addEventListener('click', () => {
       state.verPanelOpen = !state.verPanelOpen;
@@ -2662,7 +2787,25 @@
     document.getElementById('lamp-filter').addEventListener('change', (e) => { state.lampFilter = e.target.value; state.tablePage = 1; renderAll(); });
     document.getElementById('search-input').addEventListener('input', (e) => { state.search = e.target.value; state.tablePage = 1; renderAll(); });
 
-    // Modal closing
+    // Mobile FAB quick search & scroll-to-top
+    const fabSearch = document.getElementById('btn-fab-search');
+    const fabTop = document.getElementById('btn-fab-top');
+    if (fabSearch) {
+      fabSearch.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        const inp = document.getElementById('search-input');
+        if (inp) setTimeout(() => inp.focus({ preventScroll: true }), 260);
+      });
+    }
+    if (fabTop) {
+      fabTop.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
+    window.addEventListener('scroll', syncMobileFab, { passive: true });
+    window.addEventListener('resize', syncMobileFab, { passive: true });
+
+    // Modal closing + mobile bottom-sheet swipe-down-to-dismiss
     document.getElementById('btn-close-modal').addEventListener('click', closeChartModal);
     document.getElementById('chart-modal').addEventListener('click', (e) => {
       if (e.target.id === 'chart-modal') closeChartModal();
@@ -2670,6 +2813,38 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeChartModal();
     });
+
+    const sheetHead = document.getElementById('modal-sheet-head');
+    const sheetCard = document.getElementById('chart-modal-card');
+    if (sheetHead && sheetCard) {
+      let dragStartY = 0;
+      let dragDy = 0;
+      let dragging = false;
+      sheetHead.addEventListener('touchstart', (e) => {
+        if (!mobileSmallMQ.matches || !e.touches || e.touches.length !== 1) return;
+        dragStartY = e.touches[0].clientY;
+        dragDy = 0;
+        dragging = true;
+        sheetCard.style.transition = 'none';
+      }, { passive: true });
+      sheetHead.addEventListener('touchmove', (e) => {
+        if (!dragging || !e.touches || e.touches.length !== 1) return;
+        dragDy = Math.max(0, e.touches[0].clientY - dragStartY);
+        sheetCard.style.transform = `translateY(${dragDy}px)`;
+      }, { passive: true });
+      const endDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        sheetCard.style.transition = '';
+        if (dragDy > 72) {
+          closeChartModal();
+        } else {
+          sheetCard.style.transform = '';
+        }
+      };
+      sheetHead.addEventListener('touchend', endDrag, { passive: true });
+      sheetHead.addEventListener('touchcancel', endDrag, { passive: true });
+    }
   }
 
   function initWithPayload(payload) {
