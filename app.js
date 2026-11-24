@@ -1105,14 +1105,14 @@
       { label: '均值 / 峰值密度', val: mean((c) => c.avgNps).toFixed(2) + ' NPS', sub: '峰值均值 ' + mean((c) => c.peakNps).toFixed(2) + ' NPS' },
       fourthCard,
       { label: state.gauge.toUpperCase() + ' 综合指数均值', val: list.length ? mean((c) => c[gKey]).toFixed(1) : '—', sub: list.length ? `范围 ${(sorted[sorted.length - 1]?.[gKey] ?? 0).toFixed(1)} ~ ${(topChart?.[gKey] ?? 0).toFixed(1)}` : '' },
-      { label: state.gauge.toUpperCase() + ' 榜首谱面', val: topChart ? topChart.title.slice(0, 15) : '—', sub: topChart ? `${topChart.diff} ★${topChart.lv} · CP ${topChart[gKey].toFixed(1)}` : '' },
+      { label: state.gauge.toUpperCase() + ' 榜首谱面', val: topChart ? topChart.title : '—', sub: topChart ? `${topChart.diff} ★${topChart.lv} · CP ${topChart[gKey].toFixed(1)}` : '' },
     ];
 
     strip.innerHTML = cards.map((c) => `
       <div class="card kpi-card">
-        <div class="kpi-label truncate">${esc(c.label)}</div>
-        <div class="kpi-val mono truncate">${esc(c.val)}</div>
-        <div class="kpi-sub truncate">${esc(c.sub)}</div>
+        <div class="kpi-label truncate" title="${esc(c.label)}">${esc(c.label)}</div>
+        <div class="kpi-val mono truncate" title="${esc(c.val)}">${esc(c.val)}</div>
+        <div class="kpi-sub truncate" title="${esc(c.sub)}">${esc(c.sub)}</div>
       </div>
     `).join('');
   }
@@ -1920,14 +1920,14 @@
   }
 
   function renderBipolarBar(score) {
-    const pct = Math.min(50, Math.abs(score) * 0.5);
-    const isPos = score >= 0;
-    const left = isPos ? 50 : (50 - pct);
+    const rawPct = Math.min(50, Math.abs(score) * 0.5);
+    const pct = Math.max(1.6, rawPct);
+    const left = score < 0 ? (50 - pct) : (score > 0 ? 50 : 50 - pct / 2);
     const col = score >= 4 ? 'var(--pos)' : (score <= -4 ? 'var(--neg)' : 'var(--muted)');
     return `
       <div class="strength-bar-wrap">
         <div class="strength-bar-mid"></div>
-        <div class="strength-bar-fill" style="left:${left.toFixed(1)}%;width:${Math.max(1.5, pct).toFixed(1)}%;background:${col};"></div>
+        <div class="strength-bar-fill" style="left:${left.toFixed(1)}%;width:${pct.toFixed(1)}%;background:${col};"></div>
       </div>
     `;
   }
@@ -1942,8 +1942,11 @@
       const col = item.score >= 4 ? 'var(--pos)' : (item.score <= -4 ? 'var(--neg)' : 'var(--muted)');
       return `
         <div class="metric-row">
-          <div style="font-weight:700;" class="truncate" title="${esc(item.label)}">${esc(item.label)} <span class="mono" style="color:var(--muted);font-weight:500;">(${item.n})</span></div>
-          <div>${renderBipolarBar(item.score)}</div>
+          <div class="metric-label" title="${esc(item.label)} (${item.n})">
+            <span class="truncate">${esc(item.label)}</span>
+            <span class="metric-label-cnt mono">(${item.n})</span>
+          </div>
+          <div class="metric-bar-cell">${renderBipolarBar(item.score)}</div>
           <div class="mono" style="text-align:right;white-space:nowrap;">
             <b style="color:${col};">${sign}${item.score}</b>
             <span style="color:var(--muted);font-size:11px;margin-left:4px;">NC ${dSign}${item.deltaNcPct.toFixed(0)}%</span>
@@ -2007,7 +2010,7 @@
         <div class="lv-prog-row">
           <button type="button" class="btn btn-sm jump-lv-btn mono" data-jump-lv="${l.lv}" title="点击跳转到难度表查看 ★${l.lv} 清灯分布">★${l.lv}</button>
           <div class="lamp-bar-track" data-lv="${l.lv}">${segs}</div>
-          <div class="mono" style="text-align:right;color:var(--muted);font-size:11.5px;">
+          <div class="mono" style="text-align:right;color:var(--muted);font-size:11.5px;white-space:nowrap;">
             <b style="color:var(--ink);">${l.clearedNc}</b>/${l.played} <span style="opacity:0.75;">(${(l.ncRate * 100).toFixed(0)}%)</span>
           </div>
         </div>
@@ -2317,8 +2320,8 @@
                   </div>
                   ${renderBipolarBar(ax.strengthIndex)}
                   <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;">
-                    ${ax.highlights.length ? `<span style="color:var(--pos);font-weight:700;">高光:</span>` + ax.highlights.slice(0, 2).map((h) => `<button type="button" class="pill modal-chart-btn" data-cid="${h.chart.id}" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${h.lampMeta.key}" style="width:6px;height:6px;"></span>★${h.chart.lv} ${esc(h.chart.title.slice(0, 18))} (${h.lampMeta.short}${h.isCarryover ? '·旧' : ''})</button>`).join('') : ''}
-                    ${ax.struggles.length ? `<span style="color:var(--neg);font-weight:700;margin-left:4px;">卡关:</span>` + ax.struggles.slice(0, 2).map((s) => `<button type="button" class="pill modal-chart-btn" data-cid="${s.chart.id}" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${s.lampMeta.key}" style="width:6px;height:6px;"></span>★${s.chart.lv} ${esc(s.chart.title.slice(0, 18))} (${s.lampMeta.short}${s.isCarryover ? '·旧' : ''})</button>`).join('') : ''}
+                    ${ax.highlights.length ? `<span style="color:var(--pos);font-weight:700;">高光:</span>` + ax.highlights.slice(0, 2).map((h) => `<button type="button" class="pill modal-chart-btn" data-cid="${h.chart.id}" title="★${h.chart.lv} ${esc(h.chart.title)} (${h.lampMeta.short}${h.isCarryover ? '·旧' : ''})" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${h.lampMeta.key}" style="width:6px;height:6px;"></span><span>★${h.chart.lv}</span><span class="axis-song-title truncate">${esc(h.chart.title)}</span><span>(${h.lampMeta.short}${h.isCarryover ? '·旧' : ''})</span></button>`).join('') : ''}
+                    ${ax.struggles.length ? `<span style="color:var(--neg);font-weight:700;margin-left:4px;">卡关:</span>` + ax.struggles.slice(0, 2).map((s) => `<button type="button" class="pill modal-chart-btn" data-cid="${s.chart.id}" title="★${s.chart.lv} ${esc(s.chart.title)} (${s.lampMeta.short}${s.isCarryover ? '·旧' : ''})" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${s.lampMeta.key}" style="width:6px;height:6px;"></span><span>★${s.chart.lv}</span><span class="axis-song-title truncate">${esc(s.chart.title)}</span><span>(${s.lampMeta.short}${s.isCarryover ? '·旧' : ''})</span></button>`).join('') : ''}
                   </div>
                 </div>
               `;
