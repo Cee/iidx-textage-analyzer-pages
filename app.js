@@ -2526,6 +2526,16 @@
     return { status: 'saved', snapshot: snap };
   }
 
+  function syncCsvHistoryTabLabel(mode) {
+    const tabBtn = document.querySelector('#csv-workspace .csv-nav-tab[data-csec="history"]');
+    if (!tabBtn) return;
+    const cnt = getModeSnapshots(mode).length;
+    const fullEl = tabBtn.querySelector('.lbl-full');
+    const shortEl = tabBtn.querySelector('.lbl-short');
+    if (fullEl) fullEl.textContent = `历史对比 (${cnt})`;
+    if (shortEl) shortEl.textContent = `历史${cnt ? ` (${cnt})` : ''}`;
+  }
+
   async function autoArchiveCurrentReport(report, rawText, silent = false) {
     if (!report || !window.IIDXCsvAnalyzer?.buildCsvSnapshot) return null;
     try {
@@ -2540,7 +2550,11 @@
           : `本机快照库中已存在完全相同的成绩记录（跳过重复存档）`;
       }
       if (state.tab === 'csv' && state.csvReport) {
-        renderCsvWorkspace();
+        if (state.csvSectionTab === 'history') {
+          renderCsvWorkspace();
+        } else {
+          syncCsvHistoryTabLabel(report.mode);
+        }
       }
       return res;
     } catch (_) {
@@ -3729,6 +3743,33 @@
     });
   }
 
+  function jumpToExplorerFromCsv(rep, targetLevels, levelSource = 'csv') {
+    if (!rep) return;
+    hideLampTooltip();
+    const mode = rep.mode === 'dp' ? 'dp' : 'sp';
+    state.tab = mode;
+    state.lastExplorerMode = mode;
+    setModeLevels(mode, targetLevels, levelSource, false);
+    state.diffs = new Set(DIFF_LET);
+    state.selectedVers.clear();
+    state.tiers.clear();
+    state.lampFilter = 'ALL';
+    state.tag = 'ALL';
+    state.tagByMode[mode] = 'ALL';
+    if (mode === 'sp') state.spOpt = 'ALL';
+    else state.dpOpt = 'ALL';
+    state.search = '';
+    const searchInp = document.getElementById('search-input');
+    if (searchInp) searchInp.value = '';
+    resetCpRange();
+    state.expandedGroups.clear();
+    state.selectedId = null;
+    state.tablePage = 1;
+    history.replaceState(null, '', '#' + state.tab);
+    renderAll();
+    try { window.scrollTo({ top: 0, behavior: 'instant' }); } catch (_) { window.scrollTo(0, 0); }
+  }
+
   function renderCsvWorkspace() {
     const root = document.getElementById('csv-workspace');
     if (!state.csvReport) {
@@ -4642,7 +4683,7 @@
             <div class="csv-hero-lamp-rows">${heroLampRowsHtml}</div>
           </div>
 
-          <button type="button" id="btn-jump-explorer" class="btn btn-primary csv-hero-cta">去 ${modeUpper} 难度表查看全曲清灯叠加 →</button>
+          <button type="button" id="btn-jump-explorer" class="btn btn-primary csv-hero-cta">去 ${modeUpper} 难度表查看主攻区 (${focusRangeStr}) 清灯叠加 →</button>
         </div>
       </div>
 
@@ -4674,22 +4715,6 @@
       state.csvActiveSnapshotId = null;
       state.csvError = null;
       try { localStorage.removeItem(CSV_STORAGE_KEY); } catch (_) {}
-      renderAll();
-    });
-    document.getElementById('btn-jump-explorer')?.addEventListener('click', () => {
-      state.tab = rep.mode;
-      state.lastExplorerMode = rep.mode;
-      state.tag = state.tagByMode[rep.mode] || 'ALL';
-      if (state.levelsSourceByMode[rep.mode] === 'default') {
-        setModeLevels(rep.mode, getCsvFocusLevels(rep), 'csv');
-      } else {
-        state.levels = new Set(state.levelsByMode[rep.mode]);
-      }
-      state.tiers.clear();
-      resetCpRange();
-      state.selectedId = null;
-      state.tablePage = 1;
-      history.replaceState(null, '', '#' + state.tab);
       renderAll();
     });
     document.getElementById('csv-sp-style-select')?.addEventListener('change', (e) => {
@@ -4736,22 +4761,7 @@
       });
     });
 
-    const jumpToLv = (lv) => {
-      hideLampTooltip();
-      state.tab = rep.mode;
-      state.lastExplorerMode = rep.mode;
-      state.tag = state.tagByMode[rep.mode] || 'ALL';
-      setModeLevels(rep.mode, [lv], 'user');
-      state.tiers.clear();
-      resetCpRange();
-      state.selectedId = null;
-      state.tablePage = 1;
-      history.replaceState(null, '', '#' + state.tab);
-      renderAll();
-    };
-    root.querySelectorAll('.jump-lv-btn').forEach((btn) => {
-      btn.addEventListener('click', () => jumpToLv(Number(btn.dataset.jumpLv)));
-    });
+    const jumpToLv = (lv) => jumpToExplorerFromCsv(rep, [lv], 'user');
 
     const lvSummaryMap = new Map(activeLvs.map((l) => [l.lv, l]));
     let activeTouchLv = null;
@@ -5139,6 +5149,23 @@
       const h = location.hash.replace(/^#/, '');
       if ((h === 'sp' || h === 'dp' || h === 'csv') && h !== state.tab) {
         switchTopTab(h, false);
+      }
+    });
+    document.getElementById('csv-workspace')?.addEventListener('click', (e) => {
+      if (!state.csvReport) return;
+      const jumpAllBtn = e.target.closest('#btn-jump-explorer');
+      if (jumpAllBtn) {
+        e.preventDefault();
+        jumpToExplorerFromCsv(state.csvReport, getCsvFocusLevels(state.csvReport), 'csv');
+        return;
+      }
+      const jumpLvBtn = e.target.closest('.jump-lv-btn');
+      if (jumpLvBtn) {
+        e.preventDefault();
+        const lv = Number(jumpLvBtn.dataset.jumpLv);
+        if (lv >= 1 && lv <= 12) {
+          jumpToExplorerFromCsv(state.csvReport, [lv], 'user');
+        }
       }
     });
 
