@@ -29,6 +29,16 @@
   --radius-sm: 7px;
   --radius-md: 11px;
   --radius-lg: 14px;
+  --bpl-card-bg: #0c121d;
+  --bpl-plot-top: #1c2638;
+  --bpl-plot-bot: #101725;
+  --bpl-plot-border: rgba(148, 163, 184, 0.36);
+  --bpl-grid: rgba(148, 163, 184, 0.18);
+  --bpl-hi: #38bdf8;
+  --bpl-lo: #fb923c;
+  --bpl-avg: #facc15;
+  --bpl-tick: #94a3b8;
+  --bpl-val-ink: #f8fafc;
 }
 
 :root.light {
@@ -59,6 +69,16 @@
   --warn-soft: rgba(217, 119, 6, 0.11);
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 8px 22px rgba(15, 23, 42, 0.08);
+  --bpl-card-bg: #f8fafd;
+  --bpl-plot-top: #edf2f9;
+  --bpl-plot-bot: #ffffff;
+  --bpl-plot-border: #cbd5e1;
+  --bpl-grid: rgba(100, 116, 139, 0.22);
+  --bpl-hi: #0284c7;
+  --bpl-lo: #ea580c;
+  --bpl-avg: #ca8a04;
+  --bpl-tick: #475569;
+  --bpl-val-ink: #0f172a;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -1160,6 +1180,270 @@ a:hover { text-decoration: underline; }
   flex-direction: column;
   gap: 6px;
   font-size: 12px;
+}
+
+/* BPL-style 1-Second Density Waveform & Telemetry Card */
+.bpl-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bpl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bpl-head-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.bpl-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.bpl-sub-hint {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.bpl-scrub-readout {
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.bpl-scrub-readout.is-active {
+  color: var(--bpl-hi);
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.10);
+  font-weight: 700;
+}
+:root.light .bpl-scrub-readout.is-active {
+  border-color: rgba(2, 132, 199, 0.38);
+  background: rgba(2, 132, 199, 0.08);
+}
+.bpl-tabs {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.bpl-tab {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.bpl-tab:hover {
+  color: var(--ink);
+}
+.bpl-tab.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+.bpl-card {
+  background: var(--bpl-card-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px;
+  overflow: hidden;
+}
+.bpl-loading {
+  text-align: center;
+  padding: 28px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bpl-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.bpl-body.is-wide {
+  display: grid;
+  grid-template-columns: minmax(0, 1.85fr) minmax(175px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.bpl-chart-wrap {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.bpl-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  user-select: none;
+  touch-action: pan-y;
+}
+.bpl-plot-bg {
+  stroke: var(--bpl-plot-border);
+  stroke-width: 1;
+}
+.bpl-grid {
+  stroke: var(--bpl-grid);
+  stroke-width: 0.75;
+}
+.bpl-tick {
+  font-size: 8.5px;
+  fill: var(--bpl-tick);
+  font-variant-numeric: tabular-nums;
+}
+.bpl-axis-tag {
+  font-size: 8px;
+  font-weight: 700;
+  fill: var(--bpl-tick);
+  opacity: 0.85;
+  letter-spacing: 0.02em;
+}
+.bpl-line-hi {
+  fill: none;
+  stroke: var(--bpl-hi);
+  stroke-width: 1.65;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.bpl-line-lo {
+  fill: none;
+  stroke: var(--bpl-lo);
+  stroke-width: 1.55;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.bpl-avg-line {
+  stroke: var(--bpl-avg);
+  stroke-width: 1.7;
+  opacity: 0.96;
+}
+.bpl-peak-dot {
+  fill: var(--bpl-hi);
+  stroke: var(--bpl-card-bg);
+  stroke-width: 1.2;
+}
+.bpl-scrub-line {
+  stroke: var(--ink);
+  stroke-width: 1;
+  stroke-dasharray: 2.5 2;
+  opacity: 0.65;
+  pointer-events: none;
+}
+.bpl-scrub-dot {
+  stroke: var(--bpl-card-bg);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.bpl-scrub-hit {
+  cursor: crosshair;
+}
+
+/* Telemetry grid (2x2 in sidebar/mobile, 4 stacked broadcast rows in wide modal) */
+.bpl-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.bpl-metric-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  min-width: 0;
+}
+:root.light .bpl-metric-row {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.bpl-metric-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.bpl-metric-lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bpl-metric-sub {
+  font-size: 9.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.bpl-metric-val {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--bpl-val-ink);
+  line-height: 1.1;
+  flex-shrink: 0;
+}
+.bpl-val-avg { color: var(--bpl-avg); }
+.bpl-val-peak { color: var(--bpl-hi); }
+.bpl-val-aaa { color: #f59e0b; }
+:root.light .bpl-val-aaa { color: #b45309; }
+.bpl-val-me { color: var(--accent-ink); }
+.bpl-val-ref { color: var(--ink-2); }
+
+/* Wide BPL broadcast telemetry column inside desktop Chart Modal */
+.bpl-body.is-wide .bpl-metrics {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0;
+  padding: 2px 0 4px 10px;
+  border-left: 1px solid var(--border);
+}
+.bpl-body.is-wide .bpl-metric-row {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 6px 2px;
+  align-items: flex-end;
+}
+.bpl-body.is-wide .bpl-metric-row:last-child {
+  border-bottom: none;
+}
+.bpl-body.is-wide .bpl-metric-lbl {
+  font-size: 11px;
+}
+.bpl-body.is-wide .bpl-metric-val {
+  font-size: 20px;
+  font-weight: 900;
+}
+.ins-expand-btn {
+  margin-left: auto;
 }
 
 /* Option Relief Explainers (SP/DP Option Views & Chart Inspector) */
@@ -2798,7 +3082,7 @@ body.modal-open {
 }
 .modal-card {
   width: 100%;
-  max-width: 520px;
+  max-width: 660px;
   max-height: 90vh;
   max-height: 90dvh;
   display: flex;
@@ -3721,6 +4005,42 @@ body.modal-open {
   .ins-action-note {
     width: 100%;
     margin-left: 0;
+  }
+  .bpl-card {
+    padding: 8px;
+  }
+  .bpl-body.is-wide {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .bpl-body.is-wide .bpl-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 0;
+    border-left: none;
+  }
+  .bpl-body.is-wide .bpl-metric-row {
+    background: rgba(148, 163, 184, 0.06);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 7px;
+    padding: 5px 8px;
+    align-items: baseline;
+  }
+  :root.light .bpl-body.is-wide .bpl-metric-row {
+    background: var(--surface);
+    border-color: var(--border);
+  }
+  .bpl-body.is-wide .bpl-metric-row:last-child {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  }
+  :root.light .bpl-body.is-wide .bpl-metric-row:last-child {
+    border-bottom-color: var(--border);
+  }
+  .bpl-body.is-wide .bpl-metric-val {
+    font-size: 16px;
+    font-weight: 800;
   }
 }
 

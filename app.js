@@ -68,6 +68,10 @@
   let DATASETS = { sp: [], dp: [] };
   let CHART_BY_ID = { sp: new Map(), dp: new Map() };
   let VER_INFO = []; // [{ idx, code, name }]
+  let NPS_DATA = null; // { alph, sp: string[], dp: string[] }
+  let NPS_LUT = null; // Int8Array(128) mapping charCode -> 0..90
+  let npsLoadPromise = null;
+  let bplSvgUid = 0;
   let cpDomain = { min: 0, max: 100, preCpList: [], bins: 32 };
   let cpBarReady = false;
   let cpDragRaf = 0;
@@ -98,6 +102,7 @@
     gauge: 'hc',
     scope: 'ac',
     view: 'board',
+    inspectorCurveTab: 'bpl', // 'bpl' | 'pressure'
     multiBoardGroup: 'level', // 'level' | 'cp'
     expandedGroups: new Set(),
     tag: 'ALL',
@@ -304,6 +309,7 @@
         csvHistFilter: state.csvHistFilter,
         csvHistLevel: state.csvHistLevel,
         csvHistSort: state.csvHistSort,
+        inspectorCurveTab: state.inspectorCurveTab,
         levelsByMode: { sp: levelsPayload.sp, dp: levelsPayload.dp },
         levelMulti: levelsPayload.levelMulti,
       };
@@ -438,6 +444,9 @@
         state.csvHistLevel = obj.csvHistLevel;
       }
       if (validHistSort.has(obj.csvHistSort)) state.csvHistSort = obj.csvHistSort;
+      if (obj.inspectorCurveTab === 'bpl' || obj.inspectorCurveTab === 'pressure') {
+        state.inspectorCurveTab = obj.inspectorCurveTab;
+      }
       if (obj.levelsByMode) {
         applySavedLevelsObj(obj.levelsByMode, obj.levelMulti);
       } else if (typeof obj.levelMulti === 'boolean') {
@@ -462,15 +471,96 @@
     return state.csvReport.recordMap.get(chartId) || null;
   }
 
+  function initNpsData(raw) {
+    if (!raw || typeof raw.alph !== 'string') return;
+    const lut = new Int8Array(128);
+    lut.fill(-1);
+    for (let i = 0; i < raw.alph.length; i++) {
+      const code = raw.alph.charCodeAt(i);
+      if (code < 128) lut[code] = i;
+    }
+    NPS_LUT = lut;
+    NPS_DATA = raw;
+  }
+
+  function loadNpsProfilesAsync() {
+    if (NPS_DATA) return Promise.resolve(NPS_DATA);
+    if (window.__IIDX_NPS__) {
+      initNpsData(window.__IIDX_NPS__);
+      return Promise.resolve(NPS_DATA);
+    }
+    if (npsLoadPromise) return npsLoadPromise;
+    const url = window.__IIDX_NPS_URL__ || './nps.json';
+    npsLoadPromise = fetch(url)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.alph) {
+          initNpsData(data);
+          // Silently hydrate any currently visible Inspector or Chart Modal
+          if (state.tab !== 'csv' && state.selectedId) {
+            renderInspector();
+          }
+          if (isModalOpen()) {
+            const modalBody = document.getElementById('modal-inspector-body');
+            const mMode = modalBody?.dataset?.modalMode;
+            const mCid = modalBody?.dataset?.modalChartId;
+            if (mMode && mCid) {
+              const ch = CHART_BY_ID[mMode]?.get(mCid);
+              if (ch) {
+                modalBody.innerHTML = buildInspectorHtml(ch, true);
+                bindInspectorInteractive(modalBody, { modalMode: mMode, modalChartId: mCid });
+              }
+            }
+          }
+        }
+        return NPS_DATA;
+      })
+      .catch(() => {
+        npsLoadPromise = null;
+        return null;
+      });
+    return npsLoadPromise;
+  }
+
+  function getChartNpsProfile(c) {
+    if (!c || !NPS_DATA || !NPS_LUT) return null;
+    const arr = NPS_DATA[c.mode];
+    if (!arr || c.idx === undefined) return null;
+    const enc = arr[c.idx];
+    if (!enc || enc.length === 0) return null;
+    const len = enc.length;
+    const bins = new Uint8Array(len);
+    let sumNotes = 0;
+    let peakNps = 0;
+    let peakSec = 0;
+    for (let i = 0; i < len; i++) {
+      const cc = enc.charCodeAt(i);
+      const v = cc < 128 ? NPS_LUT[cc] : 0;
+      const n = v > 0 ? v : 0;
+      bins[i] = n;
+      sumNotes += n;
+      if (n > peakNps) {
+        peakNps = n;
+        peakSec = i;
+      }
+    }
+    const notesRef = sumNotes > 0 ? sumNotes : (c.notes || 0);
+    const avgNps = len > 0 ? (notesRef / len) : (c.avgNps || 0);
+    const maxScore = (c.notes || notesRef) * 2;
+    const aaaScore = Math.ceil(maxScore * 8 / 9);
+    return { bins, totalSec: len, totalNotes: notesRef, avgNps, peakNps, peakSec, maxScore, aaaScore };
+  }
+
   function unpackCharts(rawArr, mode) {
     const pref = mode === 'sp' ? 'SP' : 'DP';
     const tiers = P.tiers;
-    return rawArr.map((a) => {
+    return rawArr.map((a, idx) => {
       const s = P.songs[a[0]];
       const dChar = DIFF_LET[a[1]];
       const diff = pref + dChar;
       const verIdx = s[1];
       const obj = {
+        idx,
         mode,
         id: s[0] + '_' + diff,
         tag: s[0],
@@ -2028,9 +2118,211 @@
     `;
   }
 
-  function buildInspectorHtml(c) {
+  function renderBplDensityCard(c, rec, isWide) {
+    const tab = state.inspectorCurveTab === 'pressure' ? 'pressure' : 'bpl';
+    const tabsHtml = `
+      <div class="bpl-tabs" role="tablist" aria-label="波形视图切换">
+        <button type="button" class="bpl-tab ${tab === 'bpl' ? 'active' : ''}" data-curve-tab="bpl" role="tab" aria-selected="${tab === 'bpl'}">密度波形</button>
+        <button type="button" class="bpl-tab ${tab === 'pressure' ? 'active' : ''}" data-curve-tab="pressure" role="tab" aria-selected="${tab === 'pressure'}">物理压力</button>
+      </div>
+    `;
+
+    if (tab === 'pressure') {
+      return `
+        <div class="bpl-section">
+          <div class="bpl-head">
+            <div class="bpl-head-left">
+              <span class="bpl-title">物理压力曲线</span>
+              <span class="bpl-sub-hint">橙色为尾杀区 80%–100%</span>
+            </div>
+            ${tabsHtml}
+          </div>
+          <div class="inset-box">${renderSparkline(c.curve, c.mode)}</div>
+        </div>
+      `;
+    }
+
+    const prof = getChartNpsProfile(c);
+    if (!prof) {
+      if (!NPS_DATA) {
+        loadNpsProfilesAsync();
+        return `
+          <div class="bpl-section">
+            <div class="bpl-head">
+              <div class="bpl-head-left">
+                <span class="bpl-title">谱面密度波形</span>
+                <span class="bpl-sub-hint">1s NPS</span>
+              </div>
+              ${tabsHtml}
+            </div>
+            <div class="bpl-card bpl-loading">正在加载全曲每秒密度数据…</div>
+          </div>
+        `;
+      }
+      return `
+        <div class="bpl-section">
+          <div class="bpl-head">
+            <div class="bpl-head-left">
+              <span class="bpl-title">物理压力曲线</span>
+              <span class="bpl-sub-hint">暂无每秒密度数据</span>
+            </div>
+            ${tabsHtml}
+          </div>
+          <div class="inset-box">${renderSparkline(c.curve, c.mode)}</div>
+        </div>
+      `;
+    }
+
+    const { bins, totalSec, avgNps, peakNps, peakSec, maxScore, aaaScore } = prof;
+    const vw = isWide ? 404 : 360;
+    const vh = isWide ? 172 : 158;
+    const padL = 26;
+    const padR = 8;
+    const padT = 9;
+    const padB = 20;
+    const plotW = vw - padL - padR;
+    const plotH = vh - padT - padB;
+
+    const yStep = peakNps <= 22 ? 5 : (peakNps <= 55 ? 10 : 20);
+    const yMax = Math.max(yStep * 2, Math.ceil((peakNps + 1) / yStep) * yStep);
+    const xStep = isWide
+      ? (totalSec <= 135 ? 10 : (totalSec <= 260 ? 20 : 30))
+      : (totalSec <= 105 ? 10 : (totalSec <= 220 ? 20 : 30));
+
+    const px = (s) => padL + (s / Math.max(1, totalSec)) * plotW;
+    const py = (v) => padT + plotH * (1 - Math.max(0, Math.min(yMax, v)) / yMax);
+    const avgY = py(avgNps);
+
+    const pts = [];
+    pts.push(`${px(0).toFixed(1)},${py(bins[0]).toFixed(1)}`);
+    for (let i = 0; i < totalSec; i++) {
+      pts.push(`${px(i + 0.5).toFixed(1)},${py(bins[i]).toFixed(1)}`);
+    }
+    pts.push(`${px(totalSec).toFixed(1)},${py(bins[totalSec - 1]).toFixed(1)}`);
+    const polyStr = pts.join(' ');
+    const areaAboveStr = `${px(0).toFixed(1)},${avgY.toFixed(1)} ${polyStr} ${px(totalSec).toFixed(1)},${avgY.toFixed(1)}`;
+
+    let gridSvg = '';
+    for (let yv = 0; yv <= yMax; yv += yStep) {
+      const y = py(yv);
+      if (yv > 0 && yv < yMax) {
+        gridSvg += `<line class="bpl-grid" x1="${padL}" y1="${y.toFixed(1)}" x2="${padL + plotW}" y2="${y.toFixed(1)}" />`;
+      }
+      gridSvg += `<text class="bpl-tick" x="${padL - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end">${yv}</text>`;
+    }
+    for (let xv = 0; xv <= totalSec; xv += xStep) {
+      const x = px(xv);
+      if (xv > 0 && xv < totalSec) {
+        gridSvg += `<line class="bpl-grid" x1="${x.toFixed(1)}" y1="${padT}" x2="${x.toFixed(1)}" y2="${padT + plotH}" />`;
+      }
+      const anchor = xv === 0 ? 'start' : (xv >= totalSec - xStep * 0.25 ? 'end' : 'middle');
+      const tx = xv === 0 ? padL : (xv >= totalSec - xStep * 0.25 ? padL + plotW : x);
+      gridSvg += `<text class="bpl-tick" x="${tx.toFixed(1)}" y="${(padT + plotH + 13).toFixed(1)}" text-anchor="${anchor}">${xv}</text>`;
+    }
+
+    const uid = ++bplSvgUid;
+    const hiId = `bpl_hi_${uid}`;
+    const loId = `bpl_lo_${uid}`;
+    const bgId = `bpl_bg_${uid}`;
+    const fillId = `bpl_fill_${uid}`;
+    const peakX = px(peakSec + 0.5).toFixed(1);
+    const peakY = py(peakNps).toFixed(1);
+
+    const avgDisplay = avgNps.toFixed(2).padStart(5, '0');
+    const hasPersonalScore = !!(rec && rec.hasScore);
+    const fourthLabel = hasPersonalScore ? '我的 EX' : 'AAA 基准线';
+    const fourthSub = hasPersonalScore
+      ? `${rec.dj || ''}${rec.dj ? ' · ' : ''}MAX -${Math.max(0, maxScore - rec.score).toLocaleString()}`
+      : '88.9% EX';
+    const fourthVal = hasPersonalScore ? rec.score.toLocaleString() : aaaScore.toLocaleString();
+    const fourthCls = hasPersonalScore
+      ? (rec.score >= aaaScore ? 'bpl-val-aaa' : 'bpl-val-me')
+      : 'bpl-val-ref';
+
+    return `
+      <div class="bpl-section">
+        <div class="bpl-head">
+          <div class="bpl-head-left">
+            <span class="bpl-title">谱面密度波形</span>
+            <span class="bpl-scrub-readout mono" data-default="悬停/点按查每秒">悬停/点按查每秒</span>
+          </div>
+          ${tabsHtml}
+        </div>
+        <div class="bpl-card">
+          <div class="bpl-body${isWide ? ' is-wide' : ''}">
+            <div class="bpl-chart-wrap">
+              <svg class="bpl-svg" viewBox="0 0 ${vw} ${vh}" role="img" aria-label="${esc(c.title)} ${c.diff} 每秒密度波形，平均 ${avgNps.toFixed(2)} notes/sec，瞬间最大 ${peakNps} notes/sec">
+                <defs>
+                  <linearGradient id="${bgId}" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--bpl-plot-top)" />
+                    <stop offset="100%" stop-color="var(--bpl-plot-bot)" />
+                  </linearGradient>
+                  <linearGradient id="${fillId}" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--bpl-hi)" stop-opacity="0.22" />
+                    <stop offset="100%" stop-color="var(--bpl-hi)" stop-opacity="0.02" />
+                  </linearGradient>
+                  <clipPath id="${hiId}">
+                    <rect x="${padL - 1}" y="${padT - 2}" width="${plotW + 2}" height="${Math.max(0, avgY - (padT - 2)).toFixed(2)}" />
+                  </clipPath>
+                  <clipPath id="${loId}">
+                    <rect x="${padL - 1}" y="${avgY.toFixed(2)}" width="${plotW + 2}" height="${Math.max(0, (padT + plotH + 2) - avgY).toFixed(2)}" />
+                  </clipPath>
+                </defs>
+                <rect class="bpl-plot-bg" x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="url(#${bgId})" />
+                ${gridSvg}
+                <polygon points="${areaAboveStr}" fill="url(#${fillId})" clip-path="url(#${hiId})" />
+                <polyline class="bpl-line-lo" points="${polyStr}" clip-path="url(#${loId})" />
+                <polyline class="bpl-line-hi" points="${polyStr}" clip-path="url(#${hiId})" />
+                <line class="bpl-avg-line" x1="${padL}" y1="${avgY.toFixed(2)}" x2="${padL + plotW}" y2="${avgY.toFixed(2)}" />
+                <circle class="bpl-peak-dot" cx="${peakX}" cy="${peakY}" r="2.7" />
+                <text class="bpl-axis-tag" x="${padL + 4}" y="${padT + 10}" text-anchor="start">notes/sec</text>
+                <text class="bpl-axis-tag" x="${padL + plotW - 4}" y="${padT + plotH - 4}" text-anchor="end">sec</text>
+                <line class="bpl-scrub-line" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" style="display:none;" />
+                <circle class="bpl-scrub-dot" cx="0" cy="0" r="3.4" style="display:none;" />
+                <rect class="bpl-scrub-hit" x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent"
+                  data-mode="${c.mode}" data-cid="${esc(c.id)}"
+                  data-pad-l="${padL}" data-plot-w="${plotW}" data-pad-t="${padT}" data-plot-h="${plotH}" data-ymax="${yMax}" />
+              </svg>
+            </div>
+            <div class="bpl-metrics">
+              <div class="bpl-metric-row">
+                <div class="bpl-metric-meta">
+                  <span class="bpl-metric-lbl">平均密度</span>
+                  <span class="bpl-metric-sub">notes/sec</span>
+                </div>
+                <span class="bpl-metric-val bpl-val-avg mono">${avgDisplay}</span>
+              </div>
+              <div class="bpl-metric-row">
+                <div class="bpl-metric-meta">
+                  <span class="bpl-metric-lbl">瞬间最大密度</span>
+                  <span class="bpl-metric-sub mono">@ ${peakSec}s</span>
+                </div>
+                <span class="bpl-metric-val bpl-val-peak mono">${peakNps}</span>
+              </div>
+              <div class="bpl-metric-row">
+                <div class="bpl-metric-meta">
+                  <span class="bpl-metric-lbl">MAX SCORE</span>
+                  <span class="bpl-metric-sub mono">${c.notes.toLocaleString()} Notes</span>
+                </div>
+                <span class="bpl-metric-val mono">${maxScore.toLocaleString()}</span>
+              </div>
+              <div class="bpl-metric-row">
+                <div class="bpl-metric-meta">
+                  <span class="bpl-metric-lbl">${fourthLabel}</span>
+                  <span class="bpl-metric-sub mono">${esc(fourthSub)}</span>
+                </div>
+                <span class="bpl-metric-val ${fourthCls} mono">${fourthVal}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function buildInspectorHtml(c, isWide = false) {
     if (!c) {
-      return '<div style="font-size:12px;color:var(--muted);text-align:center;padding:18px 0;">点击左侧任意谱面查看八维能力雷达、推荐选项、难度曲线与四血条评分。</div>';
+      return '<div style="font-size:12px;color:var(--muted);text-align:center;padding:18px 0;">点击左侧任意谱面查看密度波形、八维能力雷达、推荐选项与四血条评分。</div>';
     }
     const cfg = RADAR_CFG[c.mode];
     const isDp = c.mode === 'dp';
@@ -2240,6 +2532,9 @@
 
     const textageBtnLabel = isDp ? 'Textage DP ↗' : `Textage ${state.spSide.toUpperCase()} ↗`;
     const practiceBtnHtml = isDp ? '' : renderPracticeLink(c, false);
+    const expandBtnHtml = !isWide
+      ? `<button type="button" class="btn btn-sm ins-expand-btn" data-mode="${c.mode}" data-cid="${esc(c.id)}" title="展开大窗宽屏密度波形">大窗 ⤢</button>`
+      : '';
     const sidePracticeNote = (!isDp && state.spSide === '2p')
       ? '<span class="ins-action-note">自动导入 1P 源谱，练习页可切右皿</span>'
       : '';
@@ -2261,6 +2556,7 @@
       <div class="ins-action-row">
         ${practiceBtnHtml}
         <a href="${esc(c.url)}" target="_blank" rel="noopener" class="btn btn-sm">${textageBtnLabel}</a>
+        ${expandBtnHtml}
         ${sidePracticeNote}
       </div>
 
@@ -2282,6 +2578,8 @@
         `).join('')}
       </div>
 
+      ${renderBplDensityCard(c, rec, isWide)}
+
       ${optCard}
       ${gripCard}
 
@@ -2290,7 +2588,7 @@
         <div><span style="color:var(--muted);">Notes:</span> <b>${c.notes}</b></div>
         <div><span style="color:var(--muted);">时长:</span> <b>${c.time}s</b></div>
         <div><span style="color:var(--muted);">均密:</span> <b>${c.avgNps.toFixed(1)}</b>/s</div>
-        <div><span style="color:var(--muted);">峰密:</span> <b>${c.peakNps.toFixed(1)}</b>/s</div>
+        <div><span style="color:var(--muted);">2s峰密:</span> <b>${c.peakNps.toFixed(1)}</b>/s</div>
         <div><span style="color:var(--muted);">尾/峰:</span> <b>${c.lastKill.toFixed(2)}x/${c.spike.toFixed(2)}x</b></div>
       </div>
 
@@ -2306,11 +2604,6 @@
           </div>
         </div>
       </div>
-
-      <div>
-        <div style="font-size:12px;font-weight:700;margin-bottom:5px;">全曲实时物理压力曲线（橙色为尾杀区 80%–100%）</div>
-        <div class="inset-box">${renderSparkline(c.curve, c.mode)}</div>
-      </div>
     `;
   }
 
@@ -2321,6 +2614,84 @@
     if (sel) {
       sel.addEventListener('change', (e) => setSpStyle(e.target.value, modalCtx));
     }
+    const expBtn = container.querySelector('.ins-expand-btn');
+    if (expBtn) {
+      expBtn.addEventListener('click', () => {
+        openChartModal(expBtn.dataset.mode, expBtn.dataset.cid);
+      });
+    }
+    container.querySelectorAll('[data-curve-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const nextTab = btn.dataset.curveTab === 'pressure' ? 'pressure' : 'bpl';
+        if (state.inspectorCurveTab === nextTab) return;
+        state.inspectorCurveTab = nextTab;
+        persistUiPrefs();
+        if (modalCtx && modalCtx.modalMode && modalCtx.modalChartId) {
+          const ch = CHART_BY_ID[modalCtx.modalMode]?.get(modalCtx.modalChartId);
+          if (ch) {
+            container.innerHTML = buildInspectorHtml(ch, true);
+            bindInspectorInteractive(container, modalCtx);
+          }
+          if (state.tab !== 'csv' && state.selectedId) renderInspector();
+        } else {
+          renderInspector();
+        }
+      });
+    });
+
+    const hit = container.querySelector('.bpl-scrub-hit');
+    if (hit) {
+      const svg = hit.closest('svg');
+      const section = hit.closest('.bpl-section');
+      const line = svg?.querySelector('.bpl-scrub-line');
+      const dot = svg?.querySelector('.bpl-scrub-dot');
+      const readout = section?.querySelector('.bpl-scrub-readout');
+      const mode = hit.dataset.mode;
+      const cid = hit.dataset.cid;
+      const padL = Number(hit.dataset.padL);
+      const plotW = Number(hit.dataset.plotW);
+      const padT = Number(hit.dataset.padT);
+      const plotH = Number(hit.dataset.plotH);
+      const yMax = Number(hit.dataset.ymax);
+      const chart = CHART_BY_ID[mode]?.get(cid);
+      const prof = chart ? getChartNpsProfile(chart) : null;
+
+      if (prof && line && dot && readout) {
+        const updateAtClientX = (clientX) => {
+          const rect = hit.getBoundingClientRect();
+          if (!rect || rect.width <= 0) return;
+          const frac = Math.max(0, Math.min(0.9999, (clientX - rect.left) / rect.width));
+          const sec = Math.min(prof.totalSec - 1, Math.floor(frac * prof.totalSec));
+          const val = prof.bins[sec];
+          const x = padL + ((sec + 0.5) / Math.max(1, prof.totalSec)) * plotW;
+          const y = padT + plotH * (1 - Math.max(0, Math.min(yMax, val)) / Math.max(1, yMax));
+          line.setAttribute('x1', x.toFixed(1));
+          line.setAttribute('x2', x.toFixed(1));
+          line.style.display = '';
+          dot.setAttribute('cx', x.toFixed(1));
+          dot.setAttribute('cy', y.toFixed(1));
+          dot.style.fill = val >= prof.avgNps ? 'var(--bpl-hi)' : 'var(--bpl-lo)';
+          dot.style.display = '';
+          const delta = val - prof.avgNps;
+          readout.textContent = `${sec}s · ${val}/s (${delta >= 0 ? '+' : ''}${delta.toFixed(1)})`;
+          readout.classList.add('is-active');
+        };
+        const resetScrub = () => {
+          line.style.display = 'none';
+          dot.style.display = 'none';
+          readout.textContent = readout.dataset.default || '';
+          readout.classList.remove('is-active');
+        };
+        hit.addEventListener('pointerdown', (e) => updateAtClientX(e.clientX));
+        hit.addEventListener('pointermove', (e) => {
+          if (e.pointerType === 'touch' && e.buttons === 0) return;
+          updateAtClientX(e.clientX);
+        });
+        hit.addEventListener('pointerleave', resetScrub);
+        hit.addEventListener('pointercancel', resetScrub);
+      }
+    }
+
     container.querySelectorAll('.help-tip-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2345,7 +2716,7 @@
     const mode = activeExplorerMode();
     const panel = document.getElementById('inspector');
     const c = CHART_BY_ID[mode].get(state.selectedId);
-    panel.innerHTML = buildInspectorHtml(c);
+    panel.innerHTML = buildInspectorHtml(c, false);
     bindInspectorInteractive(panel, null);
   }
 
@@ -2368,13 +2739,16 @@
     hideLampTooltip();
     const body = document.getElementById('modal-inspector-body');
     const card = document.getElementById('chart-modal-card');
-    body.innerHTML = buildInspectorHtml(c);
+    body.dataset.modalMode = mode;
+    body.dataset.modalChartId = chartId;
+    body.innerHTML = buildInspectorHtml(c, true);
     bindInspectorInteractive(body, { modalMode: mode, modalChartId: chartId });
     body.scrollTop = 0;
     if (card) card.style.transform = '';
     document.getElementById('chart-modal').classList.remove('hidden');
     document.body.classList.add('modal-open');
     syncMobileFab();
+    if (!NPS_DATA) loadNpsProfilesAsync();
   }
 
   function closeChartModal() {
@@ -5355,11 +5729,13 @@
     state.levels = new Set(state.levelsByMode[activeMode]);
     state.tag = state.tagByMode[activeMode] || 'ALL';
 
+    if (window.__IIDX_NPS__) initNpsData(window.__IIDX_NPS__);
     document.getElementById('boot-loader').classList.add('hidden');
     bindGlobalEvents();
     prefsRestored = true;
     renderAll();
     loadSnapshotsOnBoot();
+    loadNpsProfilesAsync();
   }
 
   async function boot() {
