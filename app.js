@@ -115,13 +115,30 @@
     csvMode: 'sp',
     csvParsed: null,
     csvReport: null,
-    csvSectionTab: 'overview', // 'overview' | 'grip' | 'coach' | 'lamps'
+    csvSectionTab: 'overview', // 'overview' | 'grip' | 'coach' | 'lamps' | 'songs'
     csvTargetGauge: 'nc',
     csvTargetGaugeManual: false,
     csvTargetLevel: 0, // 0 = auto
     csvCoachTab: 'quick', // 'quick' | 'weak' | 'core' | 'outliers'
+    csvTableLevel: 'ALL',
+    csvTableLamp: 'ALL',
+    csvTableDj: 'ALL',
+    csvTableExMin: '',
+    csvTableExMax: '',
+    csvTableBpMin: '',
+    csvTableBpMax: '',
+    csvTableSearch: '',
+    csvTableSortCol: 'lv', // 'lv' | 'title' | 'lamp' | 'dj' | 'score' | 'exRate' | 'bp' | 'cp' | 'lastPlayed'
+    csvTableSortDir: -1,
+    csvTablePage: 1,
+    csvTablePageSize: 100,
     csvError: null,
   };
+
+  const DJ_RANK_VAL = { AAA: 8, AA: 7, A: 6, B: 5, C: 4, D: 3, E: 2, F: 1 };
+  function getDjRankVal(dj) {
+    return DJ_RANK_VAL[String(dj || '').toUpperCase()] || 0;
+  }
 
   function esc(s) {
     return String(s ?? '')
@@ -253,6 +270,15 @@
         csvTargetGauge: state.csvTargetGauge,
         csvTargetGaugeManual: !!state.csvTargetGaugeManual,
         csvTargetLevel: state.csvTargetLevel,
+        csvTableLevel: state.csvTableLevel,
+        csvTableLamp: state.csvTableLamp,
+        csvTableDj: state.csvTableDj,
+        csvTableExMin: state.csvTableExMin,
+        csvTableExMax: state.csvTableExMax,
+        csvTableBpMin: state.csvTableBpMin,
+        csvTableBpMax: state.csvTableBpMax,
+        csvTableSortCol: state.csvTableSortCol,
+        csvTableSortDir: state.csvTableSortDir,
         levelsByMode: { sp: levelsPayload.sp, dp: levelsPayload.dp },
         levelMulti: levelsPayload.levelMulti,
       };
@@ -285,8 +311,9 @@
     const validViews = new Set(['board', 'table', 'delta', 'opt']);
     const validDiffs = new Set(DIFF_LET);
     const validTiers = new Set(TIER_ORDER_12);
-    const validCsvSec = new Set(['overview', 'grip', 'coach', 'lamps']);
+    const validCsvSec = new Set(['overview', 'grip', 'coach', 'lamps', 'songs']);
     const validCoachTab = new Set(['quick', 'weak', 'core', 'outliers']);
+    const validCsvSort = new Set(['lv', 'title', 'lamp', 'dj', 'score', 'exRate', 'bp', 'cp', 'lastPlayed']);
     const hasExplicitHash = location.hash === '#sp' || location.hash === '#dp' || location.hash === '#csv';
 
     // Backward-compatible legacy level prefs fallback
@@ -356,6 +383,15 @@
       if (Number.isInteger(obj.csvTargetLevel) && obj.csvTargetLevel >= 0 && obj.csvTargetLevel <= 12) {
         state.csvTargetLevel = obj.csvTargetLevel;
       }
+      if (typeof obj.csvTableLevel === 'string') state.csvTableLevel = obj.csvTableLevel;
+      if (typeof obj.csvTableLamp === 'string') state.csvTableLamp = obj.csvTableLamp;
+      if (typeof obj.csvTableDj === 'string') state.csvTableDj = obj.csvTableDj;
+      if (typeof obj.csvTableExMin === 'string') state.csvTableExMin = obj.csvTableExMin;
+      if (typeof obj.csvTableExMax === 'string') state.csvTableExMax = obj.csvTableExMax;
+      if (typeof obj.csvTableBpMin === 'string') state.csvTableBpMin = obj.csvTableBpMin;
+      if (typeof obj.csvTableBpMax === 'string') state.csvTableBpMax = obj.csvTableBpMax;
+      if (validCsvSort.has(obj.csvTableSortCol)) state.csvTableSortCol = obj.csvTableSortCol;
+      if (obj.csvTableSortDir === 1 || obj.csvTableSortDir === -1) state.csvTableSortDir = obj.csvTableSortDir;
       if (obj.levelsByMode) {
         applySavedLevelsObj(obj.levelsByMode, obj.levelMulti);
       } else if (typeof obj.levelMulti === 'boolean') {
@@ -2351,6 +2387,262 @@
     }).join('');
   }
 
+  function renderCsvSongsTableBody(rep) {
+    const container = document.getElementById('csv-songs-results');
+    if (!container || !rep) return;
+
+    const evalGauge = rep.evalGauge || 'nc';
+    const evalGaugeShort = evalGauge.toUpperCase();
+    const sKey = evalGauge === 'hc' ? 's_hc' : 's_nc';
+    const focusSet = new Set(rep.focusLevels || []);
+    const allRecs = Array.from(rep.recordMap.values());
+
+    const parseOptNum = (raw) => {
+      const s = String(raw ?? '').trim();
+      if (!s) return null;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : null;
+    };
+    const exMin = parseOptNum(state.csvTableExMin);
+    const exMax = parseOptNum(state.csvTableExMax);
+    const bpMin = parseOptNum(state.csvTableBpMin);
+    const bpMax = parseOptNum(state.csvTableBpMax);
+    const q = state.csvTableSearch.trim().toLowerCase();
+
+    const filtered = allRecs.filter((r) => {
+      const c = r.chart;
+      if (state.csvTableLevel === 'FOCUS') {
+        if (!focusSet.has(c.lv)) return false;
+      } else if (state.csvTableLevel !== 'ALL') {
+        if (c.lv !== Number(state.csvTableLevel)) return false;
+      }
+
+      const lf = state.csvTableLamp;
+      if (lf !== 'ALL') {
+        if (lf === 'FC' && r.lampRank !== 7) return false;
+        else if (lf === 'EXHC' && r.lampRank !== 6) return false;
+        else if (lf === 'HC' && r.lampRank !== 5) return false;
+        else if (lf === 'NC' && r.lampRank !== 4) return false;
+        else if (lf === 'EC' && r.lampRank !== 3) return false;
+        else if (lf === 'AC' && r.lampRank !== 2) return false;
+        else if (lf === 'FAILED' && r.lampRank !== 1) return false;
+        else if (lf === 'HC_PLUS' && r.lampRank < 5) return false;
+        else if (lf === 'NC_PLUS' && r.lampRank < 4) return false;
+        else if (lf === 'BELOW_HC' && r.lampRank >= 5) return false;
+        else if (lf === 'BELOW_NC' && r.lampRank >= 4) return false;
+      }
+
+      const df = state.csvTableDj;
+      if (df !== 'ALL') {
+        const dv = getDjRankVal(r.dj);
+        if (df === 'AA_PLUS' && dv < 7) return false;
+        else if (df === 'A_PLUS' && dv < 6) return false;
+        else if (df === 'NONE' && dv !== 0) return false;
+        else if (df !== 'AA_PLUS' && df !== 'A_PLUS' && df !== 'NONE' && String(r.dj || '').toUpperCase() !== df) return false;
+      }
+
+      if (exMin !== null && (!r.hasScore || r.score < exMin)) return false;
+      if (exMax !== null && (!r.hasScore || r.score > exMax)) return false;
+      if (bpMin !== null && (!r.hasBp || r.bp === null || r.bp < bpMin)) return false;
+      if (bpMax !== null && (!r.hasBp || r.bp === null || r.bp > bpMax)) return false;
+
+      if (q) {
+        const hay = (c.title + ' ' + c.artist + ' ' + c.ver + ' ' + c.verCode + ' ' + c.diff + ' ' + (c.bestOpt || '')).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    const col = state.csvTableSortCol;
+    const dir = state.csvTableSortDir;
+    const cmpNullLast = (aVal, bVal, d) => {
+      const aNull = aVal === null || aVal === undefined;
+      const bNull = bVal === null || bVal === undefined;
+      if (aNull && bNull) return 0;
+      if (aNull) return 1;
+      if (bNull) return -1;
+      return (aVal - bVal) * d;
+    };
+
+    const sorted = [...filtered].sort((a, b) => {
+      let c = 0;
+      if (col === 'lv') {
+        c = (a.chart.lv - b.chart.lv) * dir;
+        if (c === 0) c = (b.chart[sKey] - a.chart[sKey]);
+        if (c === 0) c = b.lampRank - a.lampRank;
+      } else if (col === 'title') {
+        c = a.chart.title.localeCompare(b.chart.title) * dir;
+        if (c === 0) c = (b.chart.lv - a.chart.lv);
+      } else if (col === 'lamp') {
+        c = (a.lampRank - b.lampRank) * dir;
+        if (c === 0) c = (b.chart.lv - a.chart.lv);
+        if (c === 0) c = (b.chart[sKey] - a.chart[sKey]);
+      } else if (col === 'dj') {
+        const da = getDjRankVal(a.dj) || null;
+        const db = getDjRankVal(b.dj) || null;
+        c = cmpNullLast(da, db, dir);
+        if (c === 0) c = cmpNullLast(a.exRate, b.exRate, -1);
+      } else if (col === 'score') {
+        c = cmpNullLast(a.hasScore ? a.score : null, b.hasScore ? b.score : null, dir);
+      } else if (col === 'exRate') {
+        c = cmpNullLast(a.exRate, b.exRate, dir);
+      } else if (col === 'bp') {
+        c = cmpNullLast(a.hasBp ? a.bp : null, b.hasBp ? b.bp : null, dir);
+        if (c === 0) c = (b.chart.lv - a.chart.lv);
+      } else if (col === 'cp') {
+        c = (a.chart[sKey] - b.chart[sKey]) * dir;
+      } else if (col === 'lastPlayed') {
+        const sa = a.lastPlayed || '';
+        const sb = b.lastPlayed || '';
+        if (!sa && !sb) c = 0;
+        else if (!sa) c = 1;
+        else if (!sb) c = -1;
+        else c = sa.localeCompare(sb) * dir;
+      }
+      if (c === 0) c = cmpNullLast(a.hasScore ? a.score : null, b.hasScore ? b.score : null, -1);
+      return c;
+    });
+
+    // Quick filtered slice summary stats
+    let scoredN = 0, exRateSum = 0, bpN = 0, bpSum = 0, hcCnt = 0, aaCnt = 0;
+    for (const r of sorted) {
+      if (r.exRate !== null) { scoredN++; exRateSum += r.exRate; }
+      if (r.hasBp && r.bp !== null) { bpN++; bpSum += r.bp; }
+      if (r.lampRank >= 5) hcCnt++;
+      if (getDjRankVal(r.dj) >= 7) aaCnt++;
+    }
+    const avgExTxt = scoredN ? `均分 ${(exRateSum / scoredN * 100).toFixed(1)}%` : '';
+    const avgBpTxt = bpN ? `均BP ${(bpSum / bpN).toFixed(1)}` : '';
+    const sliceStats = [avgExTxt, avgBpTxt, `HC+ ${hcCnt}`, `AA+ ${aaCnt}`].filter(Boolean).join(' · ');
+
+    const hasActiveFilter = (
+      state.csvTableLevel !== 'ALL' ||
+      state.csvTableLamp !== 'ALL' ||
+      state.csvTableDj !== 'ALL' ||
+      exMin !== null || exMax !== null ||
+      bpMin !== null || bpMax !== null ||
+      q.length > 0
+    );
+    const resetBtn = document.getElementById('btn-csv-tbl-reset');
+    if (resetBtn) resetBtn.classList.toggle('hidden', !hasActiveFilter);
+    const sortSel = document.getElementById('csv-tbl-sort-col');
+    if (sortSel) sortSel.value = col;
+    const dirBtn = document.getElementById('csv-tbl-sort-dir');
+    if (dirBtn) dirBtn.textContent = dir < 0 ? '↓ 降序' : '↑ 升序';
+
+    const pageSize = state.csvTablePageSize || 100;
+    const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+    state.csvTablePage = Math.max(1, Math.min(state.csvTablePage, totalPages));
+    const startIdx = (state.csvTablePage - 1) * pageSize;
+    const pageRows = sorted.slice(startIdx, startIdx + pageSize);
+
+    const th = (label, key) => `<th data-csort="${key}" class="sort-th">${label}${col === key ? (dir < 0 ? ' ↓' : ' ↑') : ''}</th>`;
+    const renderDjPill = (dj) => {
+      const k = String(dj || '').toUpperCase();
+      if (!k) return '<span style="color:var(--muted);">—</span>';
+      const cls = k === 'AAA' ? 'dj-AAA' : (k === 'AA' ? 'dj-AA' : (k === 'A' ? 'dj-A' : (k === 'B' ? 'dj-B' : 'dj-low')));
+      return `<span class="dj-pill ${cls} mono">${esc(k)}</span>`;
+    };
+
+    const isSp = rep.mode === 'sp';
+
+    container.innerHTML = `
+      <div class="csv-songs-meta mono">
+        <span>匹配 <b style="color:var(--ink);">${sorted.length.toLocaleString()}</b> / ${allRecs.length.toLocaleString()} 谱</span>
+        <span style="color:var(--muted);">${sliceStats}</span>
+      </div>
+      ${sorted.length ? `
+        <div class="table-wrap csv-songs-table-wrap">
+          <div class="table-mobile-hint">可左右滑动查看完整列 · 点击任意行查看谱面详情与手法建议</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                ${th('等级', 'lv')}
+                ${th('曲名 / 难度', 'title')}
+                ${th('点灯', 'lamp')}
+                ${th('评价', 'dj')}
+                ${th('EX Score', 'score')}
+                ${th('得分率', 'exRate')}
+                ${th('BP', 'bp')}
+                ${th(evalGaugeShort + ' CP', 'cp')}
+                ${th('最近游玩', 'lastPlayed')}
+                ${isSp ? '<th>练习</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${pageRows.map((r, i) => {
+                const c = r.chart;
+                const exStr = r.hasScore ? r.score.toLocaleString() : '<span style="color:var(--muted);">旧代灯</span>';
+                const rateStr = r.exRate !== null ? `${(r.exRate * 100).toFixed(1)}%` : '<span style="color:var(--muted);">—</span>';
+                const bpStr = r.hasBp && r.bp !== null ? `<b>${r.bp}</b>` : '<span style="color:var(--muted);">—</span>';
+                const dateStr = r.lastPlayed ? r.lastPlayed.slice(0, 10) : '—';
+                return `
+                  <tr data-cid="${c.id}" class="csv-song-row">
+                    <td class="mono" style="color:var(--muted);">${startIdx + i + 1}</td>
+                    <td class="mono" style="font-weight:700;white-space:nowrap;">★${c.lv}</td>
+                    <td style="max-width:260px;">
+                      <div class="truncate" style="font-weight:700;" title="${esc(c.title)}">
+                        <span class="diff-${c.dChar}" style="margin-right:4px;">[${c.dChar}]</span>${esc(c.title)}
+                      </div>
+                      <div class="truncate" style="font-size:10.5px;color:var(--muted);">${esc(c.verCode)} · ${esc(c.bestOpt)} · ${c.notes}N</div>
+                    </td>
+                    <td>${renderLampBadge(r.lampMeta)}</td>
+                    <td>${renderDjPill(r.dj)}</td>
+                    <td class="mono" style="font-weight:700;white-space:nowrap;">${exStr}</td>
+                    <td class="mono" style="white-space:nowrap;">${rateStr}</td>
+                    <td class="mono" style="white-space:nowrap;">${bpStr}</td>
+                    <td class="mono" style="color:var(--muted);white-space:nowrap;">${c[sKey].toFixed(1)}</td>
+                    <td class="mono" style="color:var(--muted);font-size:11px;white-space:nowrap;">${esc(dateStr)}</td>
+                    ${isSp ? `<td>${renderPracticeLink(c, true)}</td>` : ''}
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+          ${totalPages > 1 ? `
+            <div class="pagination-bar mono">
+              <span>第 <b>${state.csvTablePage}</b> / ${totalPages} 页（显示 ${startIdx + 1}–${Math.min(sorted.length, startIdx + pageSize)} / ${sorted.length} 谱）</span>
+              <div style="display:flex;gap:6px;">
+                <button id="csv-pg-prev" type="button" class="btn btn-sm" ${state.csvTablePage <= 1 ? 'disabled' : ''}>上一页</button>
+                <button id="csv-pg-next" type="button" class="btn btn-sm" ${state.csvTablePage >= totalPages ? 'disabled' : ''}>下一页</button>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      ` : '<div style="padding:28px 14px;text-align:center;color:var(--muted);font-size:12.5px;">没有符合当前筛选条件的游玩记录，可放宽 EX / BP 区间或点击「重置筛选」。</div>'}
+    `;
+
+    const applySortCol = (k) => {
+      if (state.csvTableSortCol === k) {
+        state.csvTableSortDir *= -1;
+      } else {
+        state.csvTableSortCol = k;
+        state.csvTableSortDir = (k === 'bp' || k === 'title') ? 1 : -1;
+      }
+      state.csvTablePage = 1;
+      renderCsvSongsTableBody(rep);
+      persistUiPrefs();
+    };
+    container.querySelectorAll('.sort-th').forEach((el) => {
+      el.addEventListener('click', () => applySortCol(el.dataset.csort));
+    });
+    container.querySelectorAll('.csv-song-row').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.rec-play-link')) return;
+        openChartModal(rep.mode, row.dataset.cid);
+      });
+    });
+    document.getElementById('csv-pg-prev')?.addEventListener('click', () => {
+      state.csvTablePage--;
+      renderCsvSongsTableBody(rep);
+    });
+    document.getElementById('csv-pg-next')?.addEventListener('click', () => {
+      state.csvTablePage++;
+      renderCsvSongsTableBody(rep);
+    });
+  }
+
   function renderCsvWorkspace() {
     const root = document.getElementById('csv-workspace');
     if (!state.csvReport) {
@@ -2814,6 +3106,105 @@
           <div style="display:flex;flex-direction:column;gap:12px;">${coachContentHtml}</div>
         </div>
       `;
+    } else if (activeSec === 'songs') {
+      const lvOptsHtml = [
+        `<option value="ALL" ${state.csvTableLevel === 'ALL' ? 'selected' : ''}>等级：全部 (${rep.playedCount})</option>`,
+        `<option value="FOCUS" ${state.csvTableLevel === 'FOCUS' ? 'selected' : ''}>主攻区 (${focusRangeStr})</option>`,
+        ...[...activeLvs].sort((a, b) => b.lv - a.lv).map((l) =>
+          `<option value="${l.lv}" ${state.csvTableLevel === String(l.lv) ? 'selected' : ''}>★${l.lv} (${l.played}谱)</option>`
+        ),
+      ].join('');
+      const lampOpts = [
+        ['ALL', '点灯：全部'],
+        ['FC', 'FC (FULLCOMBO)'],
+        ['EXHC', 'EXHC (红黄)'],
+        ['HC', 'HC (白灯)'],
+        ['NC', 'NC (蓝灯)'],
+        ['EC', 'EC (绿灯)'],
+        ['AC', 'AC (ASSIST)'],
+        ['FAILED', 'FAILED'],
+        ['HC_PLUS', 'HC 及以上 (HC+)'],
+        ['NC_PLUS', 'NC 及以上 (NC+)'],
+        ['BELOW_HC', '未白灯 (≤NC)'],
+        ['BELOW_NC', '未蓝灯 (F/AC/EC)'],
+      ];
+      const djOpts = [
+        ['ALL', '评价：全部'],
+        ['AAA', 'AAA'],
+        ['AA', 'AA'],
+        ['A', 'A'],
+        ['B', 'B'],
+        ['C', 'C'],
+        ['D', 'D'],
+        ['E', 'E'],
+        ['F', 'F'],
+        ['AA_PLUS', 'AA 及以上 (AA+)'],
+        ['A_PLUS', 'A 及以上 (A+)'],
+        ['NONE', '无评价 (旧代继承灯)'],
+      ];
+      const sortOpts = [
+        ['lv', '按等级'],
+        ['lamp', '按点灯'],
+        ['dj', '按分数等级'],
+        ['score', '按 EX Score'],
+        ['exRate', '按得分率 %'],
+        ['bp', '按 BP'],
+        ['cp', `按 ${evalGaugeShort} CP`],
+        ['lastPlayed', '按最近游玩'],
+        ['title', '按曲名'],
+      ];
+
+      sectionBodyHtml = `
+        <div class="card csv-songs-card">
+          <div class="csv-songs-head">
+            <div>
+              <h2 class="csv-sec-title">已游玩歌曲成绩表（${modeUpper} · 共 ${rep.playedCount.toLocaleString()} 谱）</h2>
+              <p class="csv-sec-sub">支持按等级、点灯、分数等级、EX Score 与 BP 组合筛选排序，点击表头切换升降序，点击任意行查看谱面详情。</p>
+            </div>
+            <button type="button" id="btn-csv-tbl-reset" class="btn btn-sm hidden">重置筛选</button>
+          </div>
+
+          <div class="csv-songs-toolbar">
+            <div class="csv-songs-filter-row">
+              <div class="csv-songs-selects">
+                <select id="csv-tbl-lv" class="select-input" aria-label="按等级筛选">${lvOptsHtml}</select>
+                <select id="csv-tbl-lamp" class="select-input" aria-label="按点灯筛选">
+                  ${lampOpts.map(([v, l]) => `<option value="${v}" ${state.csvTableLamp === v ? 'selected' : ''}>${l}</option>`).join('')}
+                </select>
+                <select id="csv-tbl-dj" class="select-input" aria-label="按分数等级筛选">
+                  ${djOpts.map(([v, l]) => `<option value="${v}" ${state.csvTableDj === v ? 'selected' : ''}>${l}</option>`).join('')}
+                </select>
+              </div>
+              <div class="csv-songs-ranges">
+                <div class="csv-range-filter-group" title="按 EX Score 区间筛选（留空表示不限）">
+                  <span class="csv-rf-lbl">EX</span>
+                  <input id="csv-tbl-ex-min" type="number" inputmode="numeric" min="0" step="50" class="mono csv-rf-input" placeholder="最低" value="${esc(state.csvTableExMin)}" aria-label="最低 EX Score" />
+                  <span class="csv-rf-sep">~</span>
+                  <input id="csv-tbl-ex-max" type="number" inputmode="numeric" min="0" step="50" class="mono csv-rf-input" placeholder="最高" value="${esc(state.csvTableExMax)}" aria-label="最高 EX Score" />
+                </div>
+                <div class="csv-range-filter-group" title="按 BP (Miss Count) 区间筛选（留空表示不限）">
+                  <span class="csv-rf-lbl">BP</span>
+                  <input id="csv-tbl-bp-min" type="number" inputmode="numeric" min="0" step="1" class="mono csv-rf-input" placeholder="最低" value="${esc(state.csvTableBpMin)}" aria-label="最低 BP" />
+                  <span class="csv-rf-sep">~</span>
+                  <input id="csv-tbl-bp-max" type="number" inputmode="numeric" min="0" step="1" class="mono csv-rf-input" placeholder="最高" value="${esc(state.csvTableBpMax)}" aria-label="最高 BP" />
+                </div>
+              </div>
+            </div>
+
+            <div class="csv-songs-sort-row">
+              <input id="csv-tbl-search" type="search" class="text-input csv-tbl-search" placeholder="搜索曲名 / 曲师 / 版本..." value="${esc(state.csvTableSearch)}" />
+              <div class="csv-sort-pick">
+                <select id="csv-tbl-sort-col" class="select-input" aria-label="排序字段">
+                  ${sortOpts.map(([v, l]) => `<option value="${v}" ${state.csvTableSortCol === v ? 'selected' : ''}>${l}</option>`).join('')}
+                </select>
+                <button type="button" id="csv-tbl-sort-dir" class="btn btn-sm mono">${state.csvTableSortDir < 0 ? '↓ 降序' : '↑ 升序'}</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="csv-songs-results"></div>
+        </div>
+      `;
     } else {
       const primaryLvs = activeLvs.filter((l) => focusSet.has(l.lv) || l.played >= 60).sort((a, b) => b.lv - a.lv);
       const primaryLvSet = new Set(primaryLvs.map((l) => l.lv));
@@ -2943,10 +3334,11 @@
         </div>
       </div>
 
-      <!-- 3. Calm 4-Tab Section Navigation (Eliminates PC Wall-of-Cards Clutter!) -->
+      <!-- 3. Calm 5-Tab Section Navigation -->
       <div class="csv-nav-tabs" role="tablist">
-        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'overview' ? 'active' : ''}" data-csec="overview">能力画像</button>
-        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'grip' ? 'active' : ''}" data-csec="grip"><span class="lbl-full">${isSp ? `手法与选项建议${rep.gripCoach?.candidates?.length ? ` (${rep.gripCoach.candidates.length})` : ''}` : '选项减负说明'}</span><span class="lbl-short">${isSp ? `手法建议${rep.gripCoach?.candidates?.length ? `(${rep.gripCoach.candidates.length})` : ''}` : '选项说明'}</span></button>
+        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'overview' ? 'active' : ''}" data-csec="overview"><span class="lbl-full">能力画像</span><span class="lbl-short">能力画像</span></button>
+        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'songs' ? 'active' : ''}" data-csec="songs"><span class="lbl-full">成绩明细表 (${rep.playedCount})</span><span class="lbl-short">成绩表</span></button>
+        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'grip' ? 'active' : ''}" data-csec="grip"><span class="lbl-full">${isSp ? `手法与选项建议${rep.gripCoach?.candidates?.length ? ` (${rep.gripCoach.candidates.length})` : ''}` : '选项减负说明'}</span><span class="lbl-short">${isSp ? '手法建议' : '选项说明'}</span></button>
         <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'coach' ? 'active' : ''}" data-csec="coach"><span class="lbl-full">推灯练歌计划</span><span class="lbl-short">练歌计划</span></button>
         <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'lamps' ? 'active' : ''}" data-csec="lamps"><span class="lbl-full">清灯分布 (${activeLvs.length}级)</span><span class="lbl-short">清灯分布</span></button>
       </div>
@@ -3152,6 +3544,55 @@
         });
       }
     });
+    if (activeSec === 'songs') {
+      const refreshTable = () => {
+        state.csvTablePage = 1;
+        renderCsvSongsTableBody(rep);
+        persistUiPrefs();
+      };
+      document.getElementById('csv-tbl-lv')?.addEventListener('change', (e) => { state.csvTableLevel = e.target.value; refreshTable(); });
+      document.getElementById('csv-tbl-lamp')?.addEventListener('change', (e) => { state.csvTableLamp = e.target.value; refreshTable(); });
+      document.getElementById('csv-tbl-dj')?.addEventListener('change', (e) => { state.csvTableDj = e.target.value; refreshTable(); });
+      document.getElementById('csv-tbl-ex-min')?.addEventListener('input', (e) => { state.csvTableExMin = e.target.value; refreshTable(); });
+      document.getElementById('csv-tbl-ex-max')?.addEventListener('input', (e) => { state.csvTableExMax = e.target.value; refreshTable(); });
+      document.getElementById('csv-tbl-bp-min')?.addEventListener('input', (e) => { state.csvTableBpMin = e.target.value; refreshTable(); });
+      document.getElementById('csv-tbl-bp-max')?.addEventListener('input', (e) => { state.csvTableBpMax = e.target.value; refreshTable(); });
+      document.getElementById('csv-tbl-search')?.addEventListener('input', (e) => { state.csvTableSearch = e.target.value; refreshTable(); });
+      document.getElementById('csv-tbl-sort-col')?.addEventListener('change', (e) => {
+        const k = e.target.value;
+        state.csvTableSortCol = k;
+        state.csvTableSortDir = (k === 'bp' || k === 'title') ? 1 : -1;
+        refreshTable();
+      });
+      document.getElementById('csv-tbl-sort-dir')?.addEventListener('click', () => {
+        state.csvTableSortDir *= -1;
+        refreshTable();
+      });
+      document.getElementById('btn-csv-tbl-reset')?.addEventListener('click', () => {
+        state.csvTableLevel = 'ALL';
+        state.csvTableLamp = 'ALL';
+        state.csvTableDj = 'ALL';
+        state.csvTableExMin = '';
+        state.csvTableExMax = '';
+        state.csvTableBpMin = '';
+        state.csvTableBpMax = '';
+        state.csvTableSearch = '';
+        state.csvTablePage = 1;
+        const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        setVal('csv-tbl-lv', 'ALL');
+        setVal('csv-tbl-lamp', 'ALL');
+        setVal('csv-tbl-dj', 'ALL');
+        setVal('csv-tbl-ex-min', '');
+        setVal('csv-tbl-ex-max', '');
+        setVal('csv-tbl-bp-min', '');
+        setVal('csv-tbl-bp-max', '');
+        setVal('csv-tbl-search', '');
+        renderCsvSongsTableBody(rep);
+        persistUiPrefs();
+      });
+      renderCsvSongsTableBody(rep);
+    }
+
     persistUiPrefs();
   }
 
