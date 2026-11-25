@@ -413,6 +413,9 @@ a:hover { text-decoration: underline; }
   border-color: var(--accent);
   color: #fff;
 }
+.lv-btn.active .lv-cnt {
+  opacity: 0.9;
+}
 .dp-theme .lv-btn.active {
   background: var(--dp-accent);
   border-color: var(--dp-accent);
@@ -1830,18 +1833,35 @@ a:hover { text-decoration: underline; }
   padding: 0 20px 14px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
   border-bottom: 1px solid var(--border);
 }
-.csv-songs-filter-row {
+.csv-songs-pills-area {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.csv-songs-ctrl-row {
+  justify-content: space-between;
+  gap: 10px;
+}
+.csv-songs-ranges {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.csv-songs-selects,
-.csv-songs-ranges {
-  display: contents;
+.csv-songs-right-ctrl {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.csv-search-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .csv-range-filter-group {
   display: inline-flex;
@@ -1876,16 +1896,8 @@ a:hover { text-decoration: underline; }
   outline: none;
   border-color: var(--accent);
 }
-.csv-songs-sort-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
 .csv-tbl-search {
-  flex: 1 1 220px;
-  max-width: 340px;
+  width: 210px;
 }
 .csv-sort-pick {
   display: inline-flex;
@@ -1907,6 +1919,11 @@ a:hover { text-decoration: underline; }
 .csv-songs-table-wrap {
   width: 100%;
 }
+.dj-dot-AAA { background: #e8c344; }
+.dj-dot-AA  { background: #4b89e8; }
+.dj-dot-A   { background: #46b478; }
+.dj-dot-B   { background: #94a3b8; }
+.dj-dot-low { background: #64748b; }
 .dj-pill {
   display: inline-flex;
   align-items: center;
@@ -2480,6 +2497,8 @@ body.modal-open {
 .tier-pill.tp-F  .tier-dot { background: #64748b; }
 
 .tier-pill.active:not(.all-tier) {
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
   box-shadow: var(--shadow-sm);
 }
@@ -2493,7 +2512,23 @@ body.modal-open {
 .tier-pill.active.tp-D  { background: #475569; border-color: #475569; }
 .tier-pill.active.tp-E,
 .tier-pill.active.tp-F  { background: #334155; border-color: #334155; }
+.tier-pill.active.lp-FC     { background: #0891b2; border-color: #0891b2; }
+.tier-pill.active.lp-EXHC   { background: #ca8a04; border-color: #ca8a04; }
+.tier-pill.active.lp-HC     { background: #e2e8f0; border-color: #cbd5e1; color: #0f172a; }
+:root.light .tier-pill.active.lp-HC { background: #334155; border-color: #334155; color: #fff; }
+.tier-pill.active.lp-NC     { background: #2563eb; border-color: #2563eb; }
+.tier-pill.active.lp-EC     { background: #16a34a; border-color: #16a34a; }
+.tier-pill.active.lp-AC     { background: #7c3aed; border-color: #7c3aed; }
+.tier-pill.active.lp-FAILED { background: #dc2626; border-color: #dc2626; }
+.tier-pill.active.dj-AAA    { background: #ca8a04; border-color: #ca8a04; }
+.tier-pill.active.dj-AA     { background: #2563eb; border-color: #2563eb; }
+.tier-pill.active.dj-A      { background: #16a34a; border-color: #16a34a; }
+.tier-pill.active.dj-B      { background: #475569; border-color: #475569; }
+.tier-pill.active.dj-low    { background: #334155; border-color: #334155; }
 .tier-pill.active .tier-dot { background: rgba(255, 255, 255, 0.85); }
+.tier-pill.active .lamp-dot.lamp-static { background: rgba(255, 255, 255, 0.9); box-shadow: none; }
+.tier-pill.active.lp-HC .lamp-dot.lamp-static { background: #0f172a; }
+:root.light .tier-pill.active.lp-HC .lamp-dot.lamp-static { background: rgba(255, 255, 255, 0.92); }
 .tier-pill.active .tp-cnt { opacity: 0.88; }
 
 .tier-filter-hint {
@@ -3099,36 +3134,50 @@ body.modal-open {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .csv-songs-head { padding: 13px 13px 10px; }
-  .csv-songs-toolbar { padding: 0 13px 12px; gap: 8px; }
-  .csv-songs-filter-row {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
+  .csv-songs-head { padding: 12px 12px 8px; }
+  .csv-songs-head .csv-sec-sub { display: none; }
+  .csv-songs-toolbar { padding: 0 12px 11px; gap: 8px; }
+  .csv-songs-pills-area { gap: 7px; }
+  .csv-mobile-collapsible { display: none !important; }
+  .csv-songs-card.csv-mobile-filters-open .csv-tbl-lv-row { flex-wrap: wrap; }
+  .csv-songs-card.csv-mobile-filters-open .diff-filter-bar.csv-mobile-collapsible {
+    display: flex !important;
+    width: 100%;
+    justify-content: space-between;
   }
-  .csv-songs-selects {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 5px;
-  }
-  .csv-songs-ranges {
-    display: grid;
+  .csv-songs-card.csv-mobile-filters-open .csv-songs-ranges.csv-mobile-collapsible {
+    display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+    width: 100%;
   }
-  .csv-songs-filter-row .select-input { width: 100%; min-width: 0; font-size: 12.5px; padding: 5px 5px; }
+  .csv-songs-ctrl-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+  }
+  .csv-songs-right-ctrl {
+    margin-left: 0;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+  }
+  .csv-search-wrap {
+    width: 100%;
+    display: flex;
+    gap: 6px;
+  }
+  .csv-tbl-search { flex: 1; width: auto; min-width: 0; }
   .csv-range-filter-group {
     width: 100%;
     justify-content: space-between;
     padding: 3px 6px;
   }
-  .csv-rf-input { flex: 1; width: 0; min-width: 40px; font-size: 13px; padding: 3px 4px; }
-  .csv-songs-sort-row { flex-direction: column; align-items: stretch; gap: 6px; }
-  .csv-tbl-search { max-width: 100%; width: 100%; }
+  .csv-rf-input { flex: 1; width: 0; min-width: 40px; font-size: 16px; padding: 3px 4px; }
   .csv-sort-pick { width: 100%; }
-  .csv-sort-pick .select-input { flex: 1; min-width: 0; font-size: 13px; padding: 5px 8px; }
-  .csv-songs-meta { padding: 8px 13px; font-size: 11.5px; }
+  .csv-sort-pick .select-input { flex: 1; min-width: 0; font-size: 14px; padding: 5px 8px; }
+  .csv-songs-meta { padding: 8px 12px; font-size: 11.5px; }
   .level-progress-grid { grid-template-columns: minmax(0, 1fr); }
   .rec-grid-2 { grid-template-columns: minmax(0, 1fr); }
   .diagnosis-box, .coach-section { padding: 13px 13px; gap: 10px; }

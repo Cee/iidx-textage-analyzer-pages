@@ -120,9 +120,12 @@
     csvTargetGaugeManual: false,
     csvTargetLevel: 0, // 0 = auto
     csvCoachTab: 'quick', // 'quick' | 'weak' | 'core' | 'outliers'
-    csvTableLevel: 'ALL',
-    csvTableLamp: 'ALL',
-    csvTableDj: 'ALL',
+    csvTableLevels: new Set(), // empty = ALL played levels
+    csvTableLevelMulti: false,
+    csvTableDiffs: new Set(['B', 'N', 'H', 'A', 'L']),
+    csvTableLamps: new Set(), // empty = ALL lamps ('FC'|'EXHC'|'HC'|'NC'|'EC'|'AC'|'FAILED')
+    csvTableDjs: new Set(), // empty = ALL DJ ranks ('AAA'..'F'|'NONE')
+    csvTableMobileFiltersOpen: false,
     csvTableExMin: '',
     csvTableExMax: '',
     csvTableBpMin: '',
@@ -270,9 +273,11 @@
         csvTargetGauge: state.csvTargetGauge,
         csvTargetGaugeManual: !!state.csvTargetGaugeManual,
         csvTargetLevel: state.csvTargetLevel,
-        csvTableLevel: state.csvTableLevel,
-        csvTableLamp: state.csvTableLamp,
-        csvTableDj: state.csvTableDj,
+        csvTableLevels: [...state.csvTableLevels].sort((a, b) => a - b),
+        csvTableLevelMulti: !!state.csvTableLevelMulti,
+        csvTableDiffs: [...state.csvTableDiffs],
+        csvTableLamps: [...state.csvTableLamps],
+        csvTableDjs: [...state.csvTableDjs],
         csvTableExMin: state.csvTableExMin,
         csvTableExMax: state.csvTableExMax,
         csvTableBpMin: state.csvTableBpMin,
@@ -314,6 +319,8 @@
     const validCsvSec = new Set(['overview', 'grip', 'coach', 'lamps', 'songs']);
     const validCoachTab = new Set(['quick', 'weak', 'core', 'outliers']);
     const validCsvSort = new Set(['lv', 'title', 'lamp', 'dj', 'score', 'exRate', 'bp', 'cp', 'lastPlayed']);
+    const validCsvLamps = new Set(['FC', 'EXHC', 'HC', 'NC', 'EC', 'AC', 'FAILED']);
+    const validCsvDjs = new Set(['AAA', 'AA', 'A', 'B', 'C', 'D', 'E', 'F', 'NONE']);
     const hasExplicitHash = location.hash === '#sp' || location.hash === '#dp' || location.hash === '#csv';
 
     // Backward-compatible legacy level prefs fallback
@@ -383,9 +390,21 @@
       if (Number.isInteger(obj.csvTargetLevel) && obj.csvTargetLevel >= 0 && obj.csvTargetLevel <= 12) {
         state.csvTargetLevel = obj.csvTargetLevel;
       }
-      if (typeof obj.csvTableLevel === 'string') state.csvTableLevel = obj.csvTableLevel;
-      if (typeof obj.csvTableLamp === 'string') state.csvTableLamp = obj.csvTableLamp;
-      if (typeof obj.csvTableDj === 'string') state.csvTableDj = obj.csvTableDj;
+      if (Array.isArray(obj.csvTableLevels)) {
+        const clean = sanitizeLevels(obj.csvTableLevels);
+        state.csvTableLevels = clean ? new Set(clean) : new Set();
+      }
+      if (typeof obj.csvTableLevelMulti === 'boolean') state.csvTableLevelMulti = obj.csvTableLevelMulti;
+      if (Array.isArray(obj.csvTableDiffs)) {
+        const cleanDiffs = obj.csvTableDiffs.filter((d) => validDiffs.has(d));
+        if (cleanDiffs.length) state.csvTableDiffs = new Set(cleanDiffs);
+      }
+      if (Array.isArray(obj.csvTableLamps)) {
+        state.csvTableLamps = new Set(obj.csvTableLamps.filter((l) => validCsvLamps.has(l)));
+      }
+      if (Array.isArray(obj.csvTableDjs)) {
+        state.csvTableDjs = new Set(obj.csvTableDjs.filter((d) => validCsvDjs.has(d)));
+      }
       if (typeof obj.csvTableExMin === 'string') state.csvTableExMin = obj.csvTableExMin;
       if (typeof obj.csvTableExMax === 'string') state.csvTableExMax = obj.csvTableExMax;
       if (typeof obj.csvTableBpMin === 'string') state.csvTableBpMin = obj.csvTableBpMin;
@@ -2427,7 +2446,8 @@
     const evalGauge = rep.evalGauge || 'nc';
     const evalGaugeShort = evalGauge.toUpperCase();
     const sKey = evalGauge === 'hc' ? 's_hc' : 's_nc';
-    const focusSet = new Set(rep.focusLevels || []);
+    const focusLvs = rep.focusLevels || [rep.primaryLevel || 12];
+    const focusRangeStr = `★${focusLvs[0]}–★${focusLvs[focusLvs.length - 1]}`;
     const allRecs = Array.from(rep.recordMap.values());
 
     const parseOptNum = (raw) => {
@@ -2442,49 +2462,244 @@
     const bpMax = parseOptNum(state.csvTableBpMax);
     const q = state.csvTableSearch.trim().toLowerCase();
 
-    const filtered = allRecs.filter((r) => {
+    const LAMP_KEY_BY_RANK = { 7: 'FC', 6: 'EXHC', 5: 'HC', 4: 'NC', 3: 'EC', 2: 'AC', 1: 'FAILED' };
+    const getLampFilterKey = (r) => LAMP_KEY_BY_RANK[r.lampRank] || 'FAILED';
+    const getDjFilterKey = (r) => {
+      const k = String(r.dj || '').toUpperCase();
+      return DJ_RANK_VAL[k] ? k : 'NONE';
+    };
+
+    const matchBase = (r) => {
       const c = r.chart;
-      if (state.csvTableLevel === 'FOCUS') {
-        if (!focusSet.has(c.lv)) return false;
-      } else if (state.csvTableLevel !== 'ALL') {
-        if (c.lv !== Number(state.csvTableLevel)) return false;
-      }
-
-      const lf = state.csvTableLamp;
-      if (lf !== 'ALL') {
-        if (lf === 'FC' && r.lampRank !== 7) return false;
-        else if (lf === 'EXHC' && r.lampRank !== 6) return false;
-        else if (lf === 'HC' && r.lampRank !== 5) return false;
-        else if (lf === 'NC' && r.lampRank !== 4) return false;
-        else if (lf === 'EC' && r.lampRank !== 3) return false;
-        else if (lf === 'AC' && r.lampRank !== 2) return false;
-        else if (lf === 'FAILED' && r.lampRank !== 1) return false;
-        else if (lf === 'HC_PLUS' && r.lampRank < 5) return false;
-        else if (lf === 'NC_PLUS' && r.lampRank < 4) return false;
-        else if (lf === 'BELOW_HC' && r.lampRank >= 5) return false;
-        else if (lf === 'BELOW_NC' && r.lampRank >= 4) return false;
-      }
-
-      const df = state.csvTableDj;
-      if (df !== 'ALL') {
-        const dv = getDjRankVal(r.dj);
-        if (df === 'AA_PLUS' && dv < 7) return false;
-        else if (df === 'A_PLUS' && dv < 6) return false;
-        else if (df === 'NONE' && dv !== 0) return false;
-        else if (df !== 'AA_PLUS' && df !== 'A_PLUS' && df !== 'NONE' && String(r.dj || '').toUpperCase() !== df) return false;
-      }
-
+      if (!state.csvTableDiffs.has(c.dChar)) return false;
       if (exMin !== null && (!r.hasScore || r.score < exMin)) return false;
       if (exMax !== null && (!r.hasScore || r.score > exMax)) return false;
       if (bpMin !== null && (!r.hasBp || r.bp === null || r.bp < bpMin)) return false;
       if (bpMax !== null && (!r.hasBp || r.bp === null || r.bp > bpMax)) return false;
-
       if (q) {
         const hay = (c.title + ' ' + c.artist + ' ' + c.ver + ' ' + c.verCode + ' ' + c.diff + ' ' + (c.bestOpt || '')).toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
-    });
+    };
+    const matchLv = (r) => state.csvTableLevels.size === 0 || state.csvTableLevels.has(r.chart.lv);
+    const matchLamp = (r) => state.csvTableLamps.size === 0 || state.csvTableLamps.has(getLampFilterKey(r));
+    const matchDj = (r) => state.csvTableDjs.size === 0 || state.csvTableDjs.has(getDjFilterKey(r));
+
+    // Faceted counts for Level, Lamp, and DJ pill ribbons
+    const lvCounts = new Array(13).fill(0);
+    let lvTotal = 0;
+    const lampCounts = { FC: 0, EXHC: 0, HC: 0, NC: 0, EC: 0, AC: 0, FAILED: 0 };
+    let lampTotal = 0;
+    const djCounts = { AAA: 0, AA: 0, A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, NONE: 0 };
+    let djTotal = 0;
+    const filtered = [];
+
+    for (const r of allRecs) {
+      if (state.csvTableDiffs.has(r.chart.dChar)) {
+        lvCounts[r.chart.lv]++;
+        lvTotal++;
+      }
+      if (!matchBase(r)) continue;
+      const okLv = matchLv(r);
+      const okLamp = matchLamp(r);
+      const okDj = matchDj(r);
+      if (okLv && okDj) {
+        lampCounts[getLampFilterKey(r)]++;
+        lampTotal++;
+      }
+      if (okLv && okLamp) {
+        djCounts[getDjFilterKey(r)]++;
+        djTotal++;
+      }
+      if (okLv && okLamp && okDj) {
+        filtered.push(r);
+      }
+    }
+
+    // Render Explorer-style filter pill bars (preserving horizontal scroll positions on mobile!)
+    const pillsArea = document.getElementById('csv-songs-pills-area');
+    if (pillsArea) {
+      const prevLvScroll = pillsArea.querySelector('.csv-lv-bar')?.scrollLeft || 0;
+      const prevLampScroll = pillsArea.querySelector('.csv-lamp-pills')?.scrollLeft || 0;
+      const prevDjScroll = pillsArea.querySelector('.csv-dj-pills')?.scrollLeft || 0;
+
+      const isAllLv = state.csvTableLevels.size === 0;
+      const isFocusLv = !isAllLv && state.csvTableLevels.size === focusLvs.length && focusLvs.every((x) => state.csvTableLevels.has(x));
+      let lvBtnsHtml = `<button id="csv-lv-all" type="button" class="lv-btn all-btn mono ${isAllLv ? 'active' : ''}">全选 <span class="lv-cnt">(${lvTotal})</span></button>`;
+      lvBtnsHtml += `<button id="csv-lv-focus" type="button" class="lv-btn mono ${isFocusLv ? 'active' : ''}" title="快速选中主攻区 ${focusRangeStr}">主攻区 <span class="lv-cnt">${focusRangeStr}</span></button>`;
+      for (let lv = 1; lv <= 12; lv++) {
+        if (lvCounts[lv] === 0 && !state.csvTableLevels.has(lv)) continue;
+        const active = !isAllLv && state.csvTableLevels.has(lv);
+        lvBtnsHtml += `<button data-clv="${lv}" type="button" class="lv-btn mono ${active ? 'active' : ''}" title="点击单选；开启多选或按住 Shift 可组合多等级">★${lv}<span class="lv-cnt">(${lvCounts[lv]})</span></button>`;
+      }
+      lvBtnsHtml += `<button id="csv-lv-multi" type="button" class="lv-btn multi-toggle ${state.csvTableLevelMulti ? 'active' : ''}" title="开启后可点击任意多个等级组合筛选">${state.csvTableLevelMulti ? '多选: 开' : '+ 多选'}</button>`;
+
+      const allDiffsOn = state.csvTableDiffs.size === 5;
+      const diffNames = { B: 'B', N: 'N', H: 'H', A: 'A', L: 'L†' };
+      let diffBtnsHtml = `<button id="csv-diff-all" type="button" class="diff-pill ${allDiffsOn ? 'active' : ''}">全难度</button>`;
+      for (const d of DIFF_LET) {
+        const on = state.csvTableDiffs.has(d);
+        diffBtnsHtml += `<button data-cdiff="${d}" type="button" class="diff-pill ${on ? 'active' : ''}"><span class="diff-${d}">${diffNames[d]}</span></button>`;
+      }
+
+      const LAMP_PILLS = [
+        { k: 'FC',     dot: 'fc',   label: 'FC' },
+        { k: 'EXHC',   dot: 'exhc', label: 'EXHC' },
+        { k: 'HC',     dot: 'hc',   label: 'HC' },
+        { k: 'NC',     dot: 'nc',   label: 'NC' },
+        { k: 'EC',     dot: 'ec',   label: 'EC' },
+        { k: 'AC',     dot: 'ac',   label: 'AC' },
+        { k: 'FAILED', dot: 'f',    label: 'FAILED' },
+      ];
+      const allLampsOn = state.csvTableLamps.size === 0;
+      let lampPillsHtml = `<button id="csv-lamp-all" type="button" class="tier-pill all-tier ${allLampsOn ? 'active' : ''}">全部灯 <span class="tp-cnt mono">(${lampTotal})</span></button>`;
+      for (const item of LAMP_PILLS) {
+        const cnt = lampCounts[item.k] || 0;
+        const on = state.csvTableLamps.has(item.k);
+        if (cnt === 0 && !on) continue;
+        lampPillsHtml += `<button data-clamp="${item.k}" type="button" class="tier-pill lp-${item.k} ${on ? 'active' : ''}" title="点击筛选 ${item.label}（可多选叠加）"><span class="lamp-dot lamp-static lamp-${item.dot}" style="width:7px;height:7px;"></span><span class="mono">${item.label}</span><span class="tp-cnt mono">(${cnt})</span></button>`;
+      }
+
+      const DJ_PILLS = [
+        { k: 'AAA',  label: 'AAA',  cls: 'dj-dot-AAA', pillCls: 'dj-AAA' },
+        { k: 'AA',   label: 'AA',   cls: 'dj-dot-AA',  pillCls: 'dj-AA' },
+        { k: 'A',    label: 'A',    cls: 'dj-dot-A',   pillCls: 'dj-A' },
+        { k: 'B',    label: 'B',    cls: 'dj-dot-B',   pillCls: 'dj-B' },
+        { k: 'C',    label: 'C',    cls: 'dj-dot-low', pillCls: 'dj-low' },
+        { k: 'D',    label: 'D',    cls: 'dj-dot-low', pillCls: 'dj-low' },
+        { k: 'E',    label: 'E',    cls: 'dj-dot-low', pillCls: 'dj-low' },
+        { k: 'F',    label: 'F',    cls: 'dj-dot-low', pillCls: 'dj-low' },
+        { k: 'NONE', label: '旧代灯', cls: 'dj-dot-low', pillCls: 'dj-low' },
+      ];
+      const allDjsOn = state.csvTableDjs.size === 0;
+      let djPillsHtml = `<button id="csv-dj-all" type="button" class="tier-pill all-tier ${allDjsOn ? 'active' : ''}">全评价 <span class="tp-cnt mono">(${djTotal})</span></button>`;
+      for (const item of DJ_PILLS) {
+        const cnt = djCounts[item.k] || 0;
+        const on = state.csvTableDjs.has(item.k);
+        if (cnt === 0 && !on) continue;
+        djPillsHtml += `<button data-cdj="${item.k}" type="button" class="tier-pill ${item.pillCls} ${on ? 'active' : ''}" title="点击筛选评价 ${item.label}（可多选叠加）"><span class="tier-dot ${item.cls}"></span><span class="mono">${item.label}</span><span class="tp-cnt mono">(${cnt})</span></button>`;
+      }
+
+      pillsArea.innerHTML = `
+        <div class="filter-row level-filter-row csv-tbl-lv-row">
+          <span class="filter-label">等级</span>
+          <div class="level-bar csv-lv-bar">${lvBtnsHtml}</div>
+          <div class="diff-filter-bar csv-mobile-collapsible" aria-label="谱面难度类型筛选">${diffBtnsHtml}</div>
+        </div>
+        <div class="filter-row filter-row-divider tier-filter-row csv-tbl-pill-row">
+          <span class="filter-label">点灯</span>
+          <div class="tier-filter-pills csv-lamp-pills">${lampPillsHtml}</div>
+          <span class="tier-filter-hint">点击单选 / 多选叠加</span>
+        </div>
+        <div class="filter-row filter-row-divider tier-filter-row csv-tbl-pill-row">
+          <span class="filter-label">评价</span>
+          <div class="tier-filter-pills csv-dj-pills">${djPillsHtml}</div>
+          <span class="tier-filter-hint">支持 AAA / AA 等组合叠加</span>
+        </div>
+      `;
+
+      const lvBarEl = pillsArea.querySelector('.csv-lv-bar');
+      const lampBarEl = pillsArea.querySelector('.csv-lamp-pills');
+      const djBarEl = pillsArea.querySelector('.csv-dj-pills');
+      if (lvBarEl) lvBarEl.scrollLeft = prevLvScroll;
+      if (lampBarEl) lampBarEl.scrollLeft = prevLampScroll;
+      if (djBarEl) djBarEl.scrollLeft = prevDjScroll;
+
+      const updateAndSave = () => {
+        state.csvTablePage = 1;
+        renderCsvSongsTableBody(rep);
+        persistUiPrefs();
+      };
+
+      document.getElementById('csv-lv-all')?.addEventListener('click', () => {
+        state.csvTableLevels.clear();
+        updateAndSave();
+      });
+      document.getElementById('csv-lv-focus')?.addEventListener('click', () => {
+        if (isFocusLv) state.csvTableLevels.clear();
+        else state.csvTableLevels = new Set(focusLvs);
+        updateAndSave();
+      });
+      document.getElementById('csv-lv-multi')?.addEventListener('click', () => {
+        state.csvTableLevelMulti = !state.csvTableLevelMulti;
+        renderCsvSongsTableBody(rep);
+        persistUiPrefs();
+      });
+      pillsArea.querySelectorAll('[data-clv]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          const lv = Number(btn.dataset.clv);
+          if (state.csvTableLevelMulti || e.shiftKey || e.ctrlKey || e.metaKey) {
+            if (state.csvTableLevels.has(lv)) state.csvTableLevels.delete(lv);
+            else state.csvTableLevels.add(lv);
+          } else {
+            if (state.csvTableLevels.size === 1 && state.csvTableLevels.has(lv)) {
+              state.csvTableLevels.clear();
+            } else {
+              state.csvTableLevels = new Set([lv]);
+            }
+          }
+          updateAndSave();
+        });
+      });
+
+      document.getElementById('csv-diff-all')?.addEventListener('click', () => {
+        state.csvTableDiffs = new Set(DIFF_LET);
+        updateAndSave();
+      });
+      pillsArea.querySelectorAll('[data-cdiff]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const d = btn.dataset.cdiff;
+          if (state.csvTableDiffs.has(d)) {
+            if (state.csvTableDiffs.size === 1) state.csvTableDiffs = new Set(DIFF_LET);
+            else state.csvTableDiffs.delete(d);
+          } else {
+            state.csvTableDiffs.add(d);
+          }
+          updateAndSave();
+        });
+      });
+
+      document.getElementById('csv-lamp-all')?.addEventListener('click', () => {
+        state.csvTableLamps.clear();
+        updateAndSave();
+      });
+      pillsArea.querySelectorAll('[data-clamp]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const k = btn.dataset.clamp;
+          if (state.csvTableLamps.has(k)) state.csvTableLamps.delete(k);
+          else state.csvTableLamps.add(k);
+          updateAndSave();
+        });
+      });
+
+      document.getElementById('csv-dj-all')?.addEventListener('click', () => {
+        state.csvTableDjs.clear();
+        updateAndSave();
+      });
+      pillsArea.querySelectorAll('[data-cdj]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const k = btn.dataset.cdj;
+          if (state.csvTableDjs.has(k)) state.csvTableDjs.delete(k);
+          else state.csvTableDjs.add(k);
+          updateAndSave();
+        });
+      });
+    }
+
+    // Sync mobile collapsible secondary filters button (B/N/H/A/L + EX + BP)
+    const songsCard = document.getElementById('csv-songs-card');
+    const mobileBtn = document.getElementById('btn-csv-tbl-mobile-filters');
+    let mobileExtraCnt = 0;
+    if (state.csvTableDiffs.size < 5) mobileExtraCnt++;
+    if (exMin !== null || exMax !== null) mobileExtraCnt++;
+    if (bpMin !== null || bpMax !== null) mobileExtraCnt++;
+    if (songsCard) songsCard.classList.toggle('csv-mobile-filters-open', state.csvTableMobileFiltersOpen);
+    if (mobileBtn) {
+      mobileBtn.classList.toggle('has-active', mobileExtraCnt > 0 || state.csvTableMobileFiltersOpen);
+      mobileBtn.setAttribute('aria-expanded', state.csvTableMobileFiltersOpen ? 'true' : 'false');
+      mobileBtn.textContent = `EX/BP${mobileExtraCnt > 0 ? ` (${mobileExtraCnt})` : ''} ${state.csvTableMobileFiltersOpen ? '▴' : '▾'}`;
+    }
 
     const col = state.csvTableSortCol;
     const dir = state.csvTableSortDir;
@@ -2549,9 +2764,10 @@
     const sliceStats = [avgExTxt, avgBpTxt, `HC+ ${hcCnt}`, `AA+ ${aaCnt}`].filter(Boolean).join(' · ');
 
     const hasActiveFilter = (
-      state.csvTableLevel !== 'ALL' ||
-      state.csvTableLamp !== 'ALL' ||
-      state.csvTableDj !== 'ALL' ||
+      state.csvTableLevels.size > 0 ||
+      state.csvTableDiffs.size < 5 ||
+      state.csvTableLamps.size > 0 ||
+      state.csvTableDjs.size > 0 ||
       exMin !== null || exMax !== null ||
       bpMin !== null || bpMax !== null ||
       q.length > 0
@@ -2643,7 +2859,7 @@
             </div>
           ` : ''}
         </div>
-      ` : '<div style="padding:28px 14px;text-align:center;color:var(--muted);font-size:12.5px;">没有符合当前筛选条件的游玩记录，可放宽 EX / BP 区间或点击「重置筛选」。</div>'}
+      ` : '<div style="padding:28px 14px;text-align:center;color:var(--muted);font-size:12.5px;">没有符合当前筛选条件的游玩记录，可放宽筛选条件或点击「重置筛选」。</div>'}
     `;
 
     const applySortCol = (k) => {
@@ -3140,41 +3356,6 @@
         </div>
       `;
     } else if (activeSec === 'songs') {
-      const lvOptsHtml = [
-        `<option value="ALL" ${state.csvTableLevel === 'ALL' ? 'selected' : ''}>等级：全部 (${rep.playedCount})</option>`,
-        `<option value="FOCUS" ${state.csvTableLevel === 'FOCUS' ? 'selected' : ''}>主攻区 (${focusRangeStr})</option>`,
-        ...[...activeLvs].sort((a, b) => b.lv - a.lv).map((l) =>
-          `<option value="${l.lv}" ${state.csvTableLevel === String(l.lv) ? 'selected' : ''}>★${l.lv} (${l.played}谱)</option>`
-        ),
-      ].join('');
-      const lampOpts = [
-        ['ALL', '点灯：全部'],
-        ['FC', 'FC (FULLCOMBO)'],
-        ['EXHC', 'EXHC (红黄)'],
-        ['HC', 'HC (白灯)'],
-        ['NC', 'NC (蓝灯)'],
-        ['EC', 'EC (绿灯)'],
-        ['AC', 'AC (ASSIST)'],
-        ['FAILED', 'FAILED'],
-        ['HC_PLUS', 'HC 及以上 (HC+)'],
-        ['NC_PLUS', 'NC 及以上 (NC+)'],
-        ['BELOW_HC', '未白灯 (≤NC)'],
-        ['BELOW_NC', '未蓝灯 (F/AC/EC)'],
-      ];
-      const djOpts = [
-        ['ALL', '评价：全部'],
-        ['AAA', 'AAA'],
-        ['AA', 'AA'],
-        ['A', 'A'],
-        ['B', 'B'],
-        ['C', 'C'],
-        ['D', 'D'],
-        ['E', 'E'],
-        ['F', 'F'],
-        ['AA_PLUS', 'AA 及以上 (AA+)'],
-        ['A_PLUS', 'A 及以上 (A+)'],
-        ['NONE', '无评价 (旧代继承灯)'],
-      ];
       const sortOpts = [
         ['lv', '按等级'],
         ['lamp', '按点灯'],
@@ -3188,27 +3369,20 @@
       ];
 
       sectionBodyHtml = `
-        <div class="card csv-songs-card">
+        <div class="card csv-songs-card ${state.csvTableMobileFiltersOpen ? 'csv-mobile-filters-open' : ''}" id="csv-songs-card">
           <div class="csv-songs-head">
             <div>
               <h2 class="csv-sec-title">已游玩歌曲成绩表（${modeUpper} · 共 ${rep.playedCount.toLocaleString()} 谱）</h2>
-              <p class="csv-sec-sub">支持按等级、点灯、分数等级、EX Score 与 BP 组合筛选排序，点击表头切换升降序，点击任意行查看谱面详情。</p>
+              <p class="csv-sec-sub">点击等级、点灯、评价胶囊即可单选或多选叠加，支持 EX / BP 区间与全列点击排序。</p>
             </div>
             <button type="button" id="btn-csv-tbl-reset" class="btn btn-sm hidden">重置筛选</button>
           </div>
 
           <div class="csv-songs-toolbar">
-            <div class="csv-songs-filter-row">
-              <div class="csv-songs-selects">
-                <select id="csv-tbl-lv" class="select-input" aria-label="按等级筛选">${lvOptsHtml}</select>
-                <select id="csv-tbl-lamp" class="select-input" aria-label="按点灯筛选">
-                  ${lampOpts.map(([v, l]) => `<option value="${v}" ${state.csvTableLamp === v ? 'selected' : ''}>${l}</option>`).join('')}
-                </select>
-                <select id="csv-tbl-dj" class="select-input" aria-label="按分数等级筛选">
-                  ${djOpts.map(([v, l]) => `<option value="${v}" ${state.csvTableDj === v ? 'selected' : ''}>${l}</option>`).join('')}
-                </select>
-              </div>
-              <div class="csv-songs-ranges">
+            <div id="csv-songs-pills-area" class="csv-songs-pills-area"></div>
+
+            <div class="filter-row filter-row-divider csv-songs-ctrl-row">
+              <div class="csv-songs-ranges csv-mobile-collapsible">
                 <div class="csv-range-filter-group" title="按 EX Score 区间筛选（留空表示不限）">
                   <span class="csv-rf-lbl">EX</span>
                   <input id="csv-tbl-ex-min" type="number" inputmode="numeric" min="0" step="50" class="mono csv-rf-input" placeholder="最低" value="${esc(state.csvTableExMin)}" aria-label="最低 EX Score" />
@@ -3222,15 +3396,18 @@
                   <input id="csv-tbl-bp-max" type="number" inputmode="numeric" min="0" step="1" class="mono csv-rf-input" placeholder="最高" value="${esc(state.csvTableBpMax)}" aria-label="最高 BP" />
                 </div>
               </div>
-            </div>
 
-            <div class="csv-songs-sort-row">
-              <input id="csv-tbl-search" type="search" class="text-input csv-tbl-search" placeholder="搜索曲名 / 曲师 / 版本..." value="${esc(state.csvTableSearch)}" />
-              <div class="csv-sort-pick">
-                <select id="csv-tbl-sort-col" class="select-input" aria-label="排序字段">
-                  ${sortOpts.map(([v, l]) => `<option value="${v}" ${state.csvTableSortCol === v ? 'selected' : ''}>${l}</option>`).join('')}
-                </select>
-                <button type="button" id="csv-tbl-sort-dir" class="btn btn-sm mono">${state.csvTableSortDir < 0 ? '↓ 降序' : '↑ 升序'}</button>
+              <div class="csv-songs-right-ctrl">
+                <div class="csv-search-wrap">
+                  <input id="csv-tbl-search" type="search" class="text-input csv-tbl-search" placeholder="搜索曲名 / 曲师 / 版本..." value="${esc(state.csvTableSearch)}" />
+                  <button type="button" id="btn-csv-tbl-mobile-filters" class="btn mobile-filter-btn" aria-expanded="false">EX/BP ▾</button>
+                </div>
+                <div class="csv-sort-pick">
+                  <select id="csv-tbl-sort-col" class="select-input" aria-label="排序字段">
+                    ${sortOpts.map(([v, l]) => `<option value="${v}" ${state.csvTableSortCol === v ? 'selected' : ''}>${l}</option>`).join('')}
+                  </select>
+                  <button type="button" id="csv-tbl-sort-dir" class="btn btn-sm mono">${state.csvTableSortDir < 0 ? '↓ 降序' : '↑ 升序'}</button>
+                </div>
               </div>
             </div>
           </div>
@@ -3583,9 +3760,10 @@
         renderCsvSongsTableBody(rep);
         persistUiPrefs();
       };
-      document.getElementById('csv-tbl-lv')?.addEventListener('change', (e) => { state.csvTableLevel = e.target.value; refreshTable(); });
-      document.getElementById('csv-tbl-lamp')?.addEventListener('change', (e) => { state.csvTableLamp = e.target.value; refreshTable(); });
-      document.getElementById('csv-tbl-dj')?.addEventListener('change', (e) => { state.csvTableDj = e.target.value; refreshTable(); });
+      document.getElementById('btn-csv-tbl-mobile-filters')?.addEventListener('click', () => {
+        state.csvTableMobileFiltersOpen = !state.csvTableMobileFiltersOpen;
+        renderCsvSongsTableBody(rep);
+      });
       document.getElementById('csv-tbl-ex-min')?.addEventListener('input', (e) => { state.csvTableExMin = e.target.value; refreshTable(); });
       document.getElementById('csv-tbl-ex-max')?.addEventListener('input', (e) => { state.csvTableExMax = e.target.value; refreshTable(); });
       document.getElementById('csv-tbl-bp-min')?.addEventListener('input', (e) => { state.csvTableBpMin = e.target.value; refreshTable(); });
@@ -3602,9 +3780,10 @@
         refreshTable();
       });
       document.getElementById('btn-csv-tbl-reset')?.addEventListener('click', () => {
-        state.csvTableLevel = 'ALL';
-        state.csvTableLamp = 'ALL';
-        state.csvTableDj = 'ALL';
+        state.csvTableLevels.clear();
+        state.csvTableDiffs = new Set(DIFF_LET);
+        state.csvTableLamps.clear();
+        state.csvTableDjs.clear();
         state.csvTableExMin = '';
         state.csvTableExMax = '';
         state.csvTableBpMin = '';
@@ -3612,9 +3791,6 @@
         state.csvTableSearch = '';
         state.csvTablePage = 1;
         const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-        setVal('csv-tbl-lv', 'ALL');
-        setVal('csv-tbl-lamp', 'ALL');
-        setVal('csv-tbl-dj', 'ALL');
         setVal('csv-tbl-ex-min', '');
         setVal('csv-tbl-ex-max', '');
         setVal('csv-tbl-bp-min', '');
