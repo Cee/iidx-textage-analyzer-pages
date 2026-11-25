@@ -1919,6 +1919,22 @@ a:hover { text-decoration: underline; }
 .csv-songs-table-wrap {
   width: 100%;
 }
+.csv-song-row-unmatched {
+  cursor: default !important;
+}
+.csv-nochart-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  vertical-align: 1px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
 .dj-dot-AAA { background: #e8c344; }
 .dj-dot-AA  { background: #4b89e8; }
 .dj-dot-A   { background: #46b478; }

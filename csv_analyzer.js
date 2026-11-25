@@ -244,11 +244,29 @@
     '31': 'epolis', '32': 'pinky crush', '33': 'sparkle shower', '34': 'zinrai',
   };
 
+  const VER_CODE_BY_KEY = (() => {
+    const m = { '1st_sub': '1st' };
+    for (const [num, name] of Object.entries(NUMERIC_VER_MAP)) {
+      if (num === '0' || num === '1') continue;
+      m[name] = num;
+    }
+    return m;
+  })();
+
   function normVerName(v) {
     const s = String(v || '').trim().toLowerCase();
     if (NUMERIC_VER_MAP[s]) return NUMERIC_VER_MAP[s];
     if (s === '1st&substream' || s === '1st style' || s === 'substream') return '1st_sub';
     return s.replace(/\s+/g, ' ');
+  }
+
+  function inferVerCodeFromName(v) {
+    const k = normVerName(v);
+    return VER_CODE_BY_KEY[k] || String(v || '').trim();
+  }
+
+  function normHomoglyph(s) {
+    return normCompact(s).replace(/0/g, 'o').replace(/1/g, 'l');
   }
 
   function parseKonamiCsv(text, filename) {
@@ -335,11 +353,13 @@
           songKey,
           tag: c.tag,
           ver: c.ver,
+          verCode: c.verCode || inferVerCodeFromName(c.ver),
           verKey: normVerName(c.ver),
           title: c.title,
           artist: c.artist,
           exactTitle: normExact(c.title),
           compactTitle: normCompact(c.title),
+          homoglyphTitle: normHomoglyph(c.title),
           baseTitle: normBaseTitle(c.title),
           compactArtist: normCompact(c.artist),
           hasAc: false,
@@ -406,17 +426,83 @@
   function matchCsvToCatalog(parsedCsv, charts, mode) {
     const index = buildCatalogSongIndex(charts);
     const recordMap = new Map(); // chart.id -> playerRecord
+    const unmatchedRecordMap = new Map(); // synthetic key -> playerRecord without catalog chart
     const playedRecords = [];
+    const unmatchedRecords = [];
     const unmatchedSongs = [];
     let matchedSongs = 0;
     let totalCsvPlayedCharts = 0;
     let missingTextageDiffs = 0;
     let levelExactMatches = 0;
     let levelComparisons = 0;
+    const modePref = mode === 'sp' ? 'SP' : 'DP';
+
+    const pushUnmatchedRecord = (row, d, dr, matchedSong, reason) => {
+      const isSyntheticPgGr = dr.hasScore
+        && dr.score > 0
+        && dr.pg === Math.floor(dr.score / 2)
+        && dr.gr === (dr.score % 2);
+      const pgRatio = (dr.hasScore && !isSyntheticPgGr && (dr.pg + dr.gr) > 0)
+        ? dr.pg / (dr.pg + dr.gr)
+        : null;
+      const verStr = matchedSong ? matchedSong.ver : row.version;
+      const verCode = (matchedSong && matchedSong.verCode) ? matchedSong.verCode : inferVerCodeFromName(row.version);
+      const stubChart = {
+        id: null,
+        mode,
+        tag: matchedSong ? matchedSong.tag : null,
+        ver: verStr,
+        verCode,
+        title: row.title,
+        artist: row.artist || (matchedSong ? matchedSong.artist : ''),
+        diff: modePref + d.key,
+        dChar: d.key,
+        lv: dr.lv || 0,
+        ac: true,
+        notes: null,
+        bestOpt: '',
+        s_ec: null,
+        s_nc: null,
+        s_hc: null,
+        s_exhc: null,
+        noCatalogChart: true,
+      };
+      const rec = {
+        chartId: null,
+        chart: stubChart,
+        hasChart: false,
+        unmatchedReason: reason,
+        mode,
+        csvLevel: dr.lv || 0,
+        lamp: dr.lamp,
+        lampRank: dr.lampRank,
+        lampMeta: LAMP_META[dr.lamp],
+        score: dr.score,
+        hasScore: dr.hasScore,
+        isCarryover: !dr.hasScore && !dr.hasBp,
+        isSyntheticPgGr,
+        pg: dr.pg,
+        gr: dr.gr,
+        bp: dr.bp,
+        hasBp: dr.hasBp,
+        dj: dr.dj,
+        exRate: null,
+        bpRate: null,
+        pgRatio,
+        playCount: row.playCount,
+        lastPlayed: row.lastPlayed,
+      };
+      const uKey = `${normVerName(row.version)}|${normCompact(row.title)}|${d.key}`;
+      const existing = unmatchedRecordMap.get(uKey);
+      if (!existing || rec.lampRank > existing.lampRank || (rec.lampRank === existing.lampRank && rec.score > existing.score)) {
+        unmatchedRecordMap.set(uKey, rec);
+      }
+    };
 
     for (const row of parsedCsv.songs) {
       const exactKey = normExact(row.title);
       const compactKey = normCompact(row.title);
+      const homoglyphKey = normHomoglyph(row.title);
       const verKey = normVerName(row.version);
       const baseKey = `${verKey}|${normBaseTitle(row.title)}`;
       const artistKey = `${verKey}|${normCompact(row.artist)}`;
@@ -452,6 +538,11 @@
         }
         if (candScores.size === 0 && singleMatches.length === 1) {
           candScores.set(singleMatches[0].cand.songKey, singleMatches[0]);
+        } else if (candScores.size === 0 && singleMatches.length > 1 && homoglyphKey) {
+          const homoHits = singleMatches.filter((m) => m.cand.homoglyphTitle === homoglyphKey);
+          if (homoHits.length === 1) {
+            candScores.set(homoHits[0].cand.songKey, homoHits[0]);
+          }
         }
       }
 
@@ -463,7 +554,11 @@
       if (!best) {
         unmatchedSongs.push({ version: row.version, title: row.title, artist: row.artist });
         for (const d of DIFF_COLS) {
-          if (row.diffs[d.key]?.lampRank > 0) totalCsvPlayedCharts++;
+          const dr = row.diffs[d.key];
+          if (dr && dr.lampRank > 0) {
+            totalCsvPlayedCharts++;
+            pushUnmatchedRecord(row, d, dr, null, 'song_missing');
+          }
         }
         continue;
       }
@@ -485,7 +580,10 @@
           }
         }
         if (!chart) {
-          if (dr.lampRank > 0) missingTextageDiffs++;
+          if (dr.lampRank > 0) {
+            missingTextageDiffs++;
+            pushUnmatchedRecord(row, d, dr, song, 'diff_missing');
+          }
           continue;
         }
 
@@ -511,6 +609,7 @@
         const rec = {
           chartId: chart.id,
           chart,
+          hasChart: true,
           mode,
           csvLevel: dr.lv || chart.lv,
           lamp: dr.lamp,
@@ -540,6 +639,8 @@
     }
 
     for (const rec of recordMap.values()) playedRecords.push(rec);
+    for (const rec of unmatchedRecordMap.values()) unmatchedRecords.push(rec);
+    const allPlayedRecords = [...playedRecords, ...unmatchedRecords];
 
     return {
       mode,
@@ -550,9 +651,13 @@
       totalCsvPlayedCharts,
       missingTextageDiffs,
       playedCount: playedRecords.length,
+      unmatchedChartCount: unmatchedRecords.length,
+      totalPlayedCount: allPlayedRecords.length,
       levelExactRate: levelComparisons > 0 ? levelExactMatches / levelComparisons : 0,
       recordMap,
       playedRecords,
+      unmatchedRecords,
+      allPlayedRecords,
     };
   }
 
@@ -1196,13 +1301,15 @@
   function analyzePlayerPerformance(matchResult, catalogCharts, radarCfg, opts = {}) {
     const mode = matchResult.mode;
     const played = matchResult.playedRecords;
+    const unmatchedRecords = matchResult.unmatchedRecords || [];
+    const allPlayedRecords = matchResult.allPlayedRecords || played;
     const catalogStats = buildCatalogStats(catalogCharts);
     const axisMeta = AXIS_COACH[mode];
 
-    // 1. Per-level lamp distribution
+    // 1. Per-level lamp distribution (includes all CSV played charts, even when Textage lacks the chart yet)
     const levelSummary = [];
     for (let lv = 1; lv <= 12; lv++) {
-      const lvPlayed = played.filter((r) => r.chart.lv === lv);
+      const lvPlayed = allPlayedRecords.filter((r) => r.chart.lv === lv);
       const totalAc = catalogCharts.filter((c) => c.ac && c.lv === lv).length;
       const counts = { FAILED: 0, ASSIST: 0, EC: 0, NC: 0, HC: 0, EXHC: 0, FC: 0 };
       let scoredN = 0, exSum = 0, bpN = 0, bpRateSum = 0;
@@ -1268,7 +1375,7 @@
     const activeCandidates = levelSummary
       .filter((l) => l.played >= 5)
       .map((l) => {
-        const lvRecs = played.filter((r) => r.chart.lv === l.lv);
+        const lvRecs = allPlayedRecords.filter((r) => r.chart.lv === l.lv);
         let effN = 0, effNc = 0;
         for (const r of lvRecs) {
           const w = !hasCurrentData || !r.isCarryover ? 1.0 : 0.35;
@@ -1642,13 +1749,13 @@
     const pgRecs = focusPgRecs.length > 0 ? focusPgRecs : allPgRecs;
     const realPgCount = pgRecs.length;
     const avgPgRatio = pgRecs.length ? (pgRecs.reduce((a, r) => a + r.pgRatio, 0) / pgRecs.length) * 100 : null;
-    const bpRecs = enriched.filter((r) => r.bpRate !== null && focusLevels.includes(r.chart.lv));
+    const bpRecs = allPlayedRecords.filter((r) => r.hasBp && r.bp !== null && focusLevels.includes(r.chart.lv));
     const avgFocusBp = bpRecs.length ? bpRecs.reduce((a, r) => a + r.bp, 0) / bpRecs.length : null;
     const djCounts = { AAA: 0, AA: 0, A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
-    for (const r of scoredRecs) {
+    for (const r of allPlayedRecords) {
       if (r.dj && djCounts[r.dj] !== undefined) djCounts[r.dj]++;
     }
-    const latestPlayDate = played
+    const latestPlayDate = allPlayedRecords
       .map((r) => r.lastPlayed)
       .filter(Boolean)
       .sort()
@@ -1731,9 +1838,11 @@
       unmatchedSongs: matchResult.unmatchedSongs,
       totalCsvPlayedCharts: matchResult.totalCsvPlayedCharts,
       missingTextageDiffs: matchResult.missingTextageDiffs,
-      playedCount: played.length,
-      scoredCount: scoredRecs.length,
-      carryoverCount: played.filter((r) => r.isCarryover).length,
+      playedCount: allPlayedRecords.length,
+      matchedChartCount: played.length,
+      unmatchedChartCount: unmatchedRecords.length,
+      scoredCount: allPlayedRecords.filter((r) => r.hasScore).length,
+      carryoverCount: allPlayedRecords.filter((r) => r.isCarryover).length,
       latestPlayDate,
       levelSummary,
       irt,
@@ -1762,6 +1871,8 @@
       summaryLines,
       enriched,
       recordMap: matchResult.recordMap,
+      unmatchedRecords,
+      allPlayedRecords,
     };
 
     if (mode === 'sp') {

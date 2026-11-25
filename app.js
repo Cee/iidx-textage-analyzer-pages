@@ -2448,7 +2448,7 @@
     const sKey = evalGauge === 'hc' ? 's_hc' : 's_nc';
     const focusLvs = rep.focusLevels || [rep.primaryLevel || 12];
     const focusRangeStr = `★${focusLvs[0]}–★${focusLvs[focusLvs.length - 1]}`;
-    const allRecs = Array.from(rep.recordMap.values());
+    const allRecs = rep.allPlayedRecords || Array.from(rep.recordMap.values());
 
     const parseOptNum = (raw) => {
       const s = String(raw ?? '').trim();
@@ -2477,7 +2477,8 @@
       if (bpMin !== null && (!r.hasBp || r.bp === null || r.bp < bpMin)) return false;
       if (bpMax !== null && (!r.hasBp || r.bp === null || r.bp > bpMax)) return false;
       if (q) {
-        const hay = (c.title + ' ' + c.artist + ' ' + c.ver + ' ' + c.verCode + ' ' + c.diff + ' ' + (c.bestOpt || '')).toLowerCase();
+        const noChartKw = (r.hasChart === false || c.noCatalogChart) ? ' 无谱面 未收录' : '';
+        const hay = ((c.title || '') + ' ' + (c.artist || '') + ' ' + (c.ver || '') + ' ' + (c.verCode || '') + ' ' + (c.diff || '') + ' ' + (c.bestOpt || '') + noChartKw).toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -2497,7 +2498,7 @@
 
     for (const r of allRecs) {
       if (state.csvTableDiffs.has(r.chart.dChar)) {
-        lvCounts[r.chart.lv]++;
+        if (r.chart.lv >= 1 && r.chart.lv <= 12) lvCounts[r.chart.lv]++;
         lvTotal++;
       }
       if (!matchBase(r)) continue;
@@ -2712,11 +2713,13 @@
       return (aVal - bVal) * d;
     };
 
+    const getCp = (r) => (r.hasChart !== false && !r.chart.noCatalogChart && Number.isFinite(r.chart[sKey])) ? r.chart[sKey] : null;
+
     const sorted = [...filtered].sort((a, b) => {
       let c = 0;
       if (col === 'lv') {
         c = (a.chart.lv - b.chart.lv) * dir;
-        if (c === 0) c = (b.chart[sKey] - a.chart[sKey]);
+        if (c === 0) c = cmpNullLast(getCp(a), getCp(b), -1);
         if (c === 0) c = b.lampRank - a.lampRank;
       } else if (col === 'title') {
         c = a.chart.title.localeCompare(b.chart.title) * dir;
@@ -2724,7 +2727,7 @@
       } else if (col === 'lamp') {
         c = (a.lampRank - b.lampRank) * dir;
         if (c === 0) c = (b.chart.lv - a.chart.lv);
-        if (c === 0) c = (b.chart[sKey] - a.chart[sKey]);
+        if (c === 0) c = cmpNullLast(getCp(a), getCp(b), -1);
       } else if (col === 'dj') {
         const da = getDjRankVal(a.dj) || null;
         const db = getDjRankVal(b.dj) || null;
@@ -2738,7 +2741,7 @@
         c = cmpNullLast(a.hasBp ? a.bp : null, b.hasBp ? b.bp : null, dir);
         if (c === 0) c = (b.chart.lv - a.chart.lv);
       } else if (col === 'cp') {
-        c = (a.chart[sKey] - b.chart[sKey]) * dir;
+        c = cmpNullLast(getCp(a), getCp(b), dir);
       } else if (col === 'lastPlayed') {
         const sa = a.lastPlayed || '';
         const sb = b.lastPlayed || '';
@@ -2752,16 +2755,18 @@
     });
 
     // Quick filtered slice summary stats
-    let scoredN = 0, exRateSum = 0, bpN = 0, bpSum = 0, hcCnt = 0, aaCnt = 0;
+    let scoredN = 0, exRateSum = 0, bpN = 0, bpSum = 0, hcCnt = 0, aaCnt = 0, noChartCnt = 0;
     for (const r of sorted) {
       if (r.exRate !== null) { scoredN++; exRateSum += r.exRate; }
       if (r.hasBp && r.bp !== null) { bpN++; bpSum += r.bp; }
       if (r.lampRank >= 5) hcCnt++;
       if (getDjRankVal(r.dj) >= 7) aaCnt++;
+      if (r.hasChart === false || r.chart.noCatalogChart) noChartCnt++;
     }
     const avgExTxt = scoredN ? `均分 ${(exRateSum / scoredN * 100).toFixed(1)}%` : '';
     const avgBpTxt = bpN ? `均BP ${(bpSum / bpN).toFixed(1)}` : '';
-    const sliceStats = [avgExTxt, avgBpTxt, `HC+ ${hcCnt}`, `AA+ ${aaCnt}`].filter(Boolean).join(' · ');
+    const noChartTxt = noChartCnt ? `含 ${noChartCnt} 无谱面` : '';
+    const sliceStats = [avgExTxt, avgBpTxt, `HC+ ${hcCnt}`, `AA+ ${aaCnt}`, noChartTxt].filter(Boolean).join(' · ');
 
     const hasActiveFilter = (
       state.csvTableLevels.size > 0 ||
@@ -2802,7 +2807,7 @@
       </div>
       ${sorted.length ? `
         <div class="table-wrap csv-songs-table-wrap">
-          <div class="table-mobile-hint">可左右滑动查看完整列 · 点击任意行查看谱面详情与手法建议</div>
+          <div class="table-mobile-hint">可左右滑动查看完整列 · 点击已收录谱面行可查看详情与手法建议</div>
           <table class="data-table">
             <thead>
               <tr>
@@ -2822,28 +2827,35 @@
             <tbody>
               ${pageRows.map((r, i) => {
                 const c = r.chart;
+                const hasChart = r.hasChart !== false && !c.noCatalogChart;
+                const lvStr = c.lv > 0 ? `★${c.lv}` : '—';
                 const exStr = r.hasScore ? r.score.toLocaleString() : '<span style="color:var(--muted);">旧代灯</span>';
                 const rateStr = r.exRate !== null ? `${(r.exRate * 100).toFixed(1)}%` : '<span style="color:var(--muted);">—</span>';
                 const bpStr = r.hasBp && r.bp !== null ? `<b>${r.bp}</b>` : '<span style="color:var(--muted);">—</span>';
+                const cpVal = getCp(r);
+                const cpStr = cpVal !== null ? cpVal.toFixed(1) : '—';
                 const dateStr = r.lastPlayed ? r.lastPlayed.slice(0, 10) : '—';
+                const subLine = hasChart
+                  ? `${esc(c.verCode)} · ${esc(c.bestOpt)} · ${c.notes}N`
+                  : `${esc(c.verCode || c.ver)}${c.artist ? ` · ${esc(c.artist)}` : ''} · 仅 CSV 成绩`;
                 return `
-                  <tr data-cid="${c.id}" class="csv-song-row">
+                  <tr ${hasChart ? `data-cid="${c.id}"` : ''} class="csv-song-row${hasChart ? '' : ' csv-song-row-unmatched'}"${hasChart ? '' : ' title="Textage 暂未收录此谱面，仅展示 CSV 原始成绩（不参与物理 CP 计算）"'}>
                     <td class="mono" style="color:var(--muted);">${startIdx + i + 1}</td>
-                    <td class="mono" style="font-weight:700;white-space:nowrap;">★${c.lv}</td>
+                    <td class="mono" style="font-weight:700;white-space:nowrap;">${lvStr}</td>
                     <td style="max-width:260px;">
                       <div class="truncate" style="font-weight:700;" title="${esc(c.title)}">
-                        <span class="diff-${c.dChar}" style="margin-right:4px;">[${c.dChar}]</span>${esc(c.title)}
+                        <span class="diff-${c.dChar}" style="margin-right:4px;">[${c.dChar}]</span>${esc(c.title)}${hasChart ? '' : '<span class="csv-nochart-tag" title="Textage 暂未收录此谱面，仅展示 CSV 原始成绩">无谱面</span>'}
                       </div>
-                      <div class="truncate" style="font-size:10.5px;color:var(--muted);">${esc(c.verCode)} · ${esc(c.bestOpt)} · ${c.notes}N</div>
+                      <div class="truncate" style="font-size:10.5px;color:var(--muted);">${subLine}</div>
                     </td>
                     <td>${renderLampBadge(r.lampMeta)}</td>
                     <td>${renderDjPill(r.dj)}</td>
                     <td class="mono" style="font-weight:700;white-space:nowrap;">${exStr}</td>
                     <td class="mono" style="white-space:nowrap;">${rateStr}</td>
                     <td class="mono" style="white-space:nowrap;">${bpStr}</td>
-                    <td class="mono" style="color:var(--muted);white-space:nowrap;">${c[sKey].toFixed(1)}</td>
+                    <td class="mono" style="color:var(--muted);white-space:nowrap;">${cpStr}</td>
                     <td class="mono" style="color:var(--muted);font-size:11px;white-space:nowrap;">${esc(dateStr)}</td>
-                    ${isSp ? `<td>${renderPracticeLink(c, true)}</td>` : ''}
+                    ${isSp ? `<td>${hasChart ? renderPracticeLink(c, true) : '<span style="color:var(--muted);">—</span>'}</td>` : ''}
                   </tr>
                 `;
               }).join('')}
@@ -2878,7 +2890,7 @@
     });
     container.querySelectorAll('.csv-song-row').forEach((row) => {
       row.addEventListener('click', (e) => {
-        if (e.target.closest('.rec-play-link')) return;
+        if (!row.dataset.cid || e.target.closest('.rec-play-link')) return;
         openChartModal(rep.mode, row.dataset.cid);
       });
     });
@@ -3373,7 +3385,7 @@
           <div class="csv-songs-head">
             <div>
               <h2 class="csv-sec-title">已游玩歌曲成绩表（${modeUpper} · 共 ${rep.playedCount.toLocaleString()} 谱）</h2>
-              <p class="csv-sec-sub">点击等级、点灯、评价胶囊即可单选或多选叠加，支持 EX / BP 区间与全列点击排序。</p>
+              <p class="csv-sec-sub">点击等级、点灯、评价胶囊即可单选或多选叠加，支持 EX / BP 区间与全列点击排序。${rep.unmatchedChartCount ? ` 含 ${rep.unmatchedChartCount} 谱 Textage 暂未收录谱面（标有「无谱面」，保留完整 CSV 原始成绩）。` : ''}</p>
             </div>
             <button type="button" id="btn-csv-tbl-reset" class="btn btn-sm hidden">重置筛选</button>
           </div>
@@ -3461,7 +3473,7 @@
         <div class="csv-toolbar-meta">
           <span class="csv-file-name truncate" title="${esc(rep.filename)}">${esc(rep.filename)}</span>
           <span class="csv-meta-sep">·</span>
-          <span class="mono"><b>${rep.matchedSongs}</b>/${rep.totalCsvSongs} 曲 · <b>${rep.playedCount}</b> 谱 · ${esc(rep.latestPlayDate)}</span>
+          <span class="mono"${rep.unmatchedChartCount ? ` title="其中 ${rep.matchedChartCount} 谱已关联 Textage 谱面参与物理分析，${rep.unmatchedChartCount} 谱 Textage 暂未收录但已保留在成绩表与清灯/评价统计中"` : ''}><b>${rep.matchedSongs}</b>/${rep.totalCsvSongs} 曲 · <b>${rep.playedCount}</b> 谱 · ${esc(rep.latestPlayDate)}</span>
         </div>
         <div class="csv-toolbar-actions">
           ${isSp ? `
