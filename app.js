@@ -12,6 +12,7 @@
   const CSV_STORAGE_KEY = 'iidx_textage_csv_v1';
   const THEME_STORAGE_KEY = 'iidx_textage_theme_v1';
   const SP_SIDE_STORAGE_KEY = 'iidx_textage_sp_side_v1';
+  const SP_STYLE_STORAGE_KEY = 'iidx_textage_sp_style_v1';
 
   const RADAR_CFG = {
     sp: {
@@ -75,6 +76,7 @@
   const state = {
     tab: location.hash === '#dp' ? 'dp' : (location.hash === '#csv' ? 'csv' : 'sp'),
     spSide: '1p', // '1p' (left turntable) | '2p' (right turntable)
+    spStyle: '1048', // '1048' | 'sym' | 'half35' | 'wrist' | 'hokuto'
     levels: new Set([12]),
     levelMulti: false,
     diffs: new Set(['B', 'N', 'H', 'A', 'L']),
@@ -106,7 +108,9 @@
     csvMode: 'sp',
     csvParsed: null,
     csvReport: null,
+    csvSectionTab: 'overview', // 'overview' | 'grip' | 'coach' | 'lamps'
     csvTargetGauge: 'nc',
+    csvTargetGaugeManual: false,
     csvTargetLevel: 0, // 0 = auto
     csvCoachTab: 'quick', // 'quick' | 'weak' | 'core' | 'outliers'
     csvError: null,
@@ -296,7 +300,28 @@
     state.spSide = normalized;
     try { localStorage.setItem(SP_SIDE_STORAGE_KEY, normalized); } catch (_) {}
     applySpSide();
+    if (state.csvReport && state.csvReport.mode === 'sp' && window.IIDXCsvAnalyzer?.buildCsvGripCoaching) {
+      state.csvReport.gripCoach = window.IIDXCsvAnalyzer.buildCsvGripCoaching(state.csvReport, state.spStyle, state.spSide);
+    }
     state.tablePage = 1;
+    renderAll();
+  }
+
+  function setSpStyle(nextStyle, opts) {
+    const styles = window.IIDXCsvAnalyzer?.SP_GRIP_STYLES;
+    const normalized = (styles && styles[nextStyle]) ? nextStyle : '1048';
+    if (state.spStyle === normalized) return;
+    state.spStyle = normalized;
+    try { localStorage.setItem(SP_STYLE_STORAGE_KEY, normalized); } catch (_) {}
+    if (state.csvReport && state.csvReport.mode === 'sp' && window.IIDXCsvAnalyzer?.buildCsvGripCoaching) {
+      state.csvReport.gripCoach = window.IIDXCsvAnalyzer.buildCsvGripCoaching(state.csvReport, state.spStyle, state.spSide);
+    }
+    if (opts && opts.modalMode && opts.modalChartId) {
+      openChartModal(opts.modalMode, opts.modalChartId);
+      if (state.tab === 'csv') renderCsvWorkspace();
+      else renderInspector();
+      return;
+    }
     renderAll();
   }
 
@@ -1541,6 +1566,16 @@
           <button type="button" data-sp-side="2p" class="seg-btn sp-side-inline-btn ${is2p ? 'active' : ''}">2P 右皿视角</button>
         </div>
       </div>
+      <details class="card opt-explain-banner">
+        <summary>什么是「手型减负 -X%」？点击查看生物力学算法与选型说明</summary>
+        <div class="opt-explain-body">
+          <p><b>含义：</b>以当前 <b>${sideLabel}</b> 的「正規 (-)」手型综合负荷为 100%，切换到推荐选项后，预计可降低的<b>手指与手型综合负荷百分比</b>（并非直接降低总物量，而是缓解卡手/偏手/弱指/皿侧冲突）。</p>
+          <ul>
+            <li><b>计算维度：</b>综合评估 ① 皿侧手按键压迫（1P 1-3键 / 2P 5-7键 + 转盘切换） ② 1-2 / 6-7 边缘弱指连打与同手颤音 ③ 生物力学手指耦合阻力 ④ 黑白键交替顺手度 ⑤ 固定纵连与单键轴压迫。</li>
+            <li><b>幅度参考：</b><code>-8% 以上</code> 属于正规极易卡手的强烈推荐；<code>-4% ~ -8%</code> 属于明显顺手的优先尝试；<code>-2% 以内</code> 表示正规已较均衡。随机系（R乱/乱/S乱）按多组合法排列的期望平均减负计算。</li>
+          </ul>
+        </div>
+      </details>
     `;
 
     main.innerHTML = summaryBanner + groups.map((g) => `
@@ -1596,6 +1631,12 @@
           当前筛选共 <b class="mono" style="color:var(--ink);">${list.length.toLocaleString()}</b> 张 DP 谱面，其中 <b class="mono" style="color:var(--dp-ink);">${nonRegCnt.toLocaleString()}</b> 谱（${list.length ? ((nonRegCnt / list.length) * 100).toFixed(1) : '0.0'}%）推荐非正规选项（仅限标准 AC DP 合法选项）
         </div>
       </div>
+      <details class="card opt-explain-banner">
+        <summary>什么是 DP「手型减负 -X%」？点击查看说明</summary>
+        <div class="opt-explain-body">
+          <p><b>含义：</b>仅在标准 AC 合法 DP 选项（<code>FLIP</code> + 1P/2P 独立 <code>OFF/MIR/R-RAN/RAN/S-RAN</code>）中求解，量化相对正規降低的单手弱指、無理押し、無理皿及左右盘不均衡负荷百分比。</p>
+        </div>
+      </details>
     `;
 
     main.innerHTML = summaryBanner + groups.map((g) => `
@@ -1706,13 +1747,16 @@
         ? `${rec.score.toLocaleString()} (${(rec.exRate * 100).toFixed(1)}% · ${rec.dj || '-'})`
         : '旧代继承灯 (本代未刷新分数)';
       const bpText = rec.hasBp ? `${rec.bp} BP (${(rec.bpRate * 100).toFixed(1)}%)` : '—';
-      const ncTheta = state.csvReport?.irt?.nc?.theta;
+      const eg = state.csvReport?.evalGauge || 'nc';
+      const egShort = eg.toUpperCase();
+      const egReqRank = eg === 'hc' ? 5 : 4;
+      const egTheta = state.csvReport?.irt?.[eg]?.theta;
       let diffHint = '';
-      if (ncTheta !== null && ncTheta !== undefined) {
-        const gap = c.s_nc - ncTheta;
-        if (rec.lampRank >= 4 && gap >= 2.0) diffHint = `超越个人 NC 能力线 +${gap.toFixed(1)} CP 的高光过关！`;
-        else if (rec.lampRank < 4 && gap <= 0.5) diffHint = `定数低于/紧贴你的 NC 能力线 (${gap >= 0 ? '+' : ''}${gap.toFixed(1)} CP)，极佳推灯目标！`;
-        else diffHint = `相对个人 NC 能力线：${gap >= 0 ? '+' : ''}${gap.toFixed(1)} CP`;
+      if (egTheta !== null && egTheta !== undefined) {
+        const gap = c['s_' + eg] - egTheta;
+        if (rec.lampRank >= egReqRank && gap >= 2.0) diffHint = `超越个人 ${egShort} 能力线 +${gap.toFixed(1)} CP 的高光过关！`;
+        else if (rec.lampRank < egReqRank && gap <= 0.5) diffHint = `定数低于/紧贴你的 ${egShort} 能力线 (${gap >= 0 ? '+' : ''}${gap.toFixed(1)} CP)，极佳推灯目标！`;
+        else diffHint = `相对个人 ${egShort} 能力线：${gap >= 0 ? '+' : ''}${gap.toFixed(1)} CP`;
       }
       playerCard = `
         <div class="player-ins-card">
@@ -1732,6 +1776,14 @@
     }
 
     let optCard = '';
+    let gripCard = '';
+    const optGainVerdict = (gain) => {
+      if (gain >= 0.08) return '正规极易卡手，强烈建议优先切此选项';
+      if (gain >= 0.04) return '能明显改善顺手度，卡灯时优先尝试';
+      if (gain >= 0.02) return '有一定手型优化空间，按个人习惯选择';
+      return '正规手型已较均衡，按习惯选即可';
+    };
+
     if (isDp) {
       const pTot = Math.max(1, c.p1Notes + c.p2Notes);
       const p1Pct = (c.p1Notes / pTot * 100).toFixed(1);
@@ -1739,9 +1791,9 @@
       const diffStr = c.p1Notes === c.p2Notes ? '完全均衡' : (c.p1Notes > c.p2Notes ? `P1 偏重 +${c.p1Notes - c.p2Notes}` : `P2 偏重 +${c.p2Notes - c.p1Notes}`);
       optCard = `
         <div class="inset-box" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
             <span style="font-weight:800;color:var(--dp-ink);">DP 多选项生物力学推荐</span>
-            <span class="mono" style="font-size:11px;padding:2px 6px;border-radius:5px;background:var(--pos-soft);color:var(--pos);font-weight:700;">手型减负 -${(c.optGain * 100).toFixed(1)}%</span>
+            <span class="mono" title="相对正規 (-) 预计降低的综合手型与单手/跨键负荷百分比" style="font-size:11px;padding:2px 6px;border-radius:5px;background:var(--pos-soft);color:var(--pos);font-weight:700;">手型减负 -${(c.optGain * 100).toFixed(1)}%</span>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div style="background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 8px;">
@@ -1753,7 +1805,7 @@
               <div style="font-weight:800;margin-top:2px;">${esc(c.fixedOpt)}</div>
             </div>
           </div>
-          <div style="font-size:11.5px;color:var(--muted);">依据：${esc(c.optReason)}</div>
+          <div style="font-size:11.5px;color:var(--ink-2);">依据：${esc(c.optReason)} · <span style="color:var(--muted);">${optGainVerdict(c.optGain)}</span></div>
           <div>
             <div class="mono" style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
               <span>左盘 P1: <b>${c.p1Notes}</b> (${p1Pct}%)</span>
@@ -1765,6 +1817,10 @@
               <div style="width:${p2Pct}%;background:#14b8a6;"></div>
             </div>
           </div>
+          <details class="opt-explain-details">
+            <summary>? 什么是「手型减负 -${(c.optGain * 100).toFixed(1)}%」</summary>
+            <p>量化切换到推荐 AC 合法 DP 选项后，相对「正規」预计降低的单手弱指、無理押し、無理皿与左右盘承重失衡比例；仅代表手型顺手度改善，并非降低总物量。</p>
+          </details>
         </div>
       `;
     } else if ((c.leftNotes || 0) + (c.rightNotes || 0) > 0) {
@@ -1782,9 +1838,9 @@
       const rightCol = is2p ? '#f59e0b' : '#3b82f6';
       optCard = `
         <div class="inset-box" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;">
-            <span style="font-weight:800;color:var(--accent-ink);">SP 多选项生物力学推荐 (${is2p ? '2P 右皿视角' : '1P 左皿视角'})</span>
-            <span class="mono" style="font-size:11px;padding:2px 6px;border-radius:5px;background:var(--pos-soft);color:var(--pos);font-weight:700;">手型减负 -${(c.optGain * 100).toFixed(1)}%</span>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+            <span style="font-weight:800;color:var(--accent-ink);">SP 多选项生物力学推荐 (${is2p ? '2P 右皿' : '1P 左皿'})</span>
+            <span class="mono" title="相对正規 (-) 预计降低的手指耦合、弱指连打与皿侧按键综合负荷百分比" style="font-size:11px;padding:2px 6px;border-radius:5px;background:var(--pos-soft);color:var(--pos);font-weight:700;">手型减负 -${(c.optGain * 100).toFixed(1)}%</span>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div style="background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 8px;">
@@ -1796,7 +1852,7 @@
               <div style="font-weight:800;margin-top:2px;">${esc(c.fixedOpt)}</div>
             </div>
           </div>
-          <div style="font-size:11.5px;color:var(--muted);">依据：${esc(c.optReason)}</div>
+          <div style="font-size:11.5px;color:var(--ink-2);">依据：${esc(c.optReason)} · <span style="color:var(--muted);">${optGainVerdict(c.optGain)}</span></div>
           <div>
             <div class="mono" style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
               <span>${leftLabel}: <b>${c.leftNotes}</b> (${lPct}%)</span>
@@ -1808,8 +1864,38 @@
               <div style="width:${rPct}%;background:${rightCol};"></div>
             </div>
           </div>
+          <details class="opt-explain-details">
+            <summary>? 什么是「手型减负 -${(c.optGain * 100).toFixed(1)}%」</summary>
+            <p>基于当前 ${is2p ? '2P 右皿' : '1P 左皿'} 指法模型，综合计算皿侧按键压迫、1-2/6-7 弱指连打、手指耦合阻力、黑白键顺手度与固定纵连五项负荷；<b>-${(c.optGain * 100).toFixed(1)}%</b> 表示切换至推荐选项后相对「正規」预计降低的手型负荷比例（随机系按多组排列期望均值估算）。</p>
+          </details>
         </div>
       `;
+
+      // SP Alternate-Grip Technique Recommendation based on player's chosen main grip
+      const A = window.IIDXCsvAnalyzer;
+      if (A && A.recommendGripForChart && A.SP_GRIP_STYLES) {
+        const gRec = A.recommendGripForChart(c, state.spStyle, state.spSide);
+        const styleOpts = Object.values(A.SP_GRIP_STYLES).map((st) =>
+          `<option value="${st.key}" ${state.spStyle === st.key ? 'selected' : ''}>${esc(st.short)}</option>`
+        ).join('');
+        gripCard = `
+          <div class="inset-box grip-ins-card">
+            <div class="grip-ins-head">
+              <span style="font-weight:800;font-size:12px;">手法通关建议</span>
+              <label class="grip-inline-pick">
+                <span>主力:</span>
+                <select class="select-input ins-grip-select" aria-label="选择你的常用手法">${styleOpts}</select>
+              </label>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+              <span class="grip-pill ${gRec.needsSwitch ? 'grip-pill-switch' : 'grip-pill-ok'}">${esc(gRec.primary.altGrip)}</span>
+              ${gRec.secondary ? `<span class="grip-pill grip-pill-alt">备选: ${esc(gRec.secondary.badge)}</span>` : ''}
+            </div>
+            <div style="font-size:11.5px;color:var(--ink-2);line-height:1.5;">${esc(gRec.primary.reason)}</div>
+            ${gRec.primary.optHint ? `<div style="font-size:11px;color:var(--accent-ink);font-weight:600;">${esc(gRec.primary.optHint)}</div>` : ''}
+          </div>
+        `;
+      }
     }
 
     const textageBtnLabel = isDp ? 'Textage DP ↗' : `Textage ${state.spSide.toUpperCase()} ↗`;
@@ -1857,6 +1943,7 @@
       </div>
 
       ${optCard}
+      ${gripCard}
 
       <div class="stat-grid-3 mono">
         <div><span style="color:var(--muted);">BPM:</span> <b>${esc(c.bpm)}</b></div>
@@ -1887,11 +1974,20 @@
     `;
   }
 
+  function bindInspectorInteractive(container, modalCtx) {
+    if (!container) return;
+    const sel = container.querySelector('.ins-grip-select');
+    if (sel) {
+      sel.addEventListener('change', (e) => setSpStyle(e.target.value, modalCtx));
+    }
+  }
+
   function renderInspector() {
     const mode = activeExplorerMode();
     const panel = document.getElementById('inspector');
     const c = CHART_BY_ID[mode].get(state.selectedId);
     panel.innerHTML = buildInspectorHtml(c);
+    bindInspectorInteractive(panel, null);
   }
 
   function selectChart(chartId, openPopup) {
@@ -1914,6 +2010,7 @@
     const body = document.getElementById('modal-inspector-body');
     const card = document.getElementById('chart-modal-card');
     body.innerHTML = buildInspectorHtml(c);
+    bindInspectorInteractive(body, { modalMode: mode, modalChartId: chartId });
     body.scrollTop = 0;
     if (card) card.style.transform = '';
     document.getElementById('chart-modal').classList.remove('hidden');
@@ -1951,6 +2048,7 @@
       state.csvFilename = filename;
       state.csvMode = mode;
       state.csvParsed = parsed;
+      state.csvTargetGaugeManual = false;
       state.csvError = null;
       recomputeCsvReport();
 
@@ -1972,9 +2070,14 @@
     const mode = state.csvMode;
     const matched = A.matchCsvToCatalog(state.csvParsed, DATASETS[mode], mode);
     state.csvReport = A.analyzePlayerPerformance(matched, DATASETS[mode], RADAR_CFG[mode], {
-      targetGauge: state.csvTargetGauge,
+      targetGauge: state.csvTargetGaugeManual ? state.csvTargetGauge : undefined,
       targetLevel: state.csvTargetLevel,
+      spStyle: state.spStyle,
+      spSide: state.spSide,
     });
+    if (!state.csvTargetGaugeManual && state.csvReport?.evalGauge) {
+      state.csvTargetGauge = state.csvReport.evalGauge;
+    }
   }
 
   function loadFileObject(file) {
@@ -2000,10 +2103,11 @@
     `;
   }
 
-  function renderMetricRows(items) {
+  function renderMetricRows(items, evalGauge) {
     if (!items || items.length === 0) {
       return '<div style="font-size:12px;color:var(--muted);padding:10px 0;">样本数不足，暂无法统计。</div>';
     }
+    const gShort = evalGauge === 'hc' ? 'HC' : 'NC';
     return items.map((item) => {
       const sign = item.score > 0 ? '+' : '';
       const dSign = item.deltaNcPct > 0 ? '+' : '';
@@ -2017,7 +2121,7 @@
           <div class="metric-bar-cell">${renderBipolarBar(item.score)}</div>
           <div class="mono" style="text-align:right;white-space:nowrap;">
             <b style="color:${col};">${sign}${item.score}</b>
-            <span style="color:var(--muted);font-size:11px;margin-left:4px;">NC ${dSign}${item.deltaNcPct.toFixed(0)}%</span>
+            <span style="color:var(--muted);font-size:11px;margin-left:4px;">${gShort} ${dSign}${item.deltaNcPct.toFixed(0)}%</span>
           </div>
         </div>
       `;
@@ -2029,17 +2133,17 @@
     if (!state.csvReport) {
       root.innerHTML = `
         <div class="card dropzone-card" id="csv-dropzone">
-          <h1 class="dropzone-title">导入 Konami e-amusement 成绩 CSV · 八维诊断与进步指导</h1>
+          <h1 class="dropzone-title">导入 Konami e-amusement 成绩 CSV · 八维诊断与手法指导</h1>
           <p class="dropzone-sub">
             拖入或选择从 e-amusement 官网导出的官方 IIDX SP / DP 成绩 CSV（如 <code>4776-4489_sp_score.csv</code>）。
-            系统将结合 Textage 全量 16,657 张谱面的四血条物理定数与八维生物力学模型，精准估算你的 EC / NC / HC / EXHC 能力值、定位擅长与短板配置，并生成可直接上机练习的三阶提升歌单。
+            系统将结合 Textage 全量 16,657 张谱面的四血条物理定数与八维生物力学模型，防拉低估算你的 EC / NC / HC / EXHC 能力线，定位擅长与短板，并结合你的主力手法推荐变招与上机练歌清单。
           </p>
           ${state.csvError ? `<div style="margin:0 auto 14px;max-width:560px;padding:10px 14px;border-radius:8px;background:var(--neg-soft);color:var(--neg);font-size:12.5px;font-weight:600;">${esc(state.csvError)}</div>` : ''}
           <div class="dropzone-actions">
             <button type="button" id="btn-dz-pick" class="btn btn-primary">选择 Konami CSV 文件</button>
           </div>
           <div class="privacy-note">
-            100% 纯浏览器本地解析计算，你的成绩 CSV 不会上传到任何服务器 · 支持 UTF-8 / Shift-JIS 编码 · 导入后自动在 SP/DP 难度表全站叠加你的官方清灯状态。
+            100% 纯浏览器本地解析计算，成绩 CSV 不会上传到任何服务器 · 支持 UTF-8 / Shift-JIS 编码 · 导入后自动在 SP/DP 难度表全站叠加清灯。
           </div>
         </div>
       `;
@@ -2060,408 +2164,581 @@
       return;
     }
 
+    const A = window.IIDXCsvAnalyzer;
     const rep = state.csvReport;
+    const isSp = rep.mode === 'sp';
     const modeUpper = rep.mode.toUpperCase();
+    const evalGauge = rep.evalGauge || 'nc';
+    const evalGaugeShort = evalGauge.toUpperCase();
+    const evalGaugeCn = evalGauge === 'hc' ? 'HC 白灯' : 'NC 蓝灯';
+    const primaryIrt = rep.irt[evalGauge] || rep.irt.nc || rep.irt.ec;
     const sortedAxes = [...rep.axisAnalysis].sort((a, b) => b.strengthIndex - a.strengthIndex);
     const radarVals = rep.axisAnalysis.map((a) => a.radarPlotVal);
-
-    // Per-level lamp progress bars (only levels with played > 0)
+    const focusRangeStr = `★${rep.focusLevels[0]}–★${rep.focusLevels[rep.focusLevels.length - 1]}`;
     const activeLvs = rep.levelSummary.filter((l) => l.played > 0);
-    const levelBarsHtml = activeLvs.map((l) => {
+    const focusSet = new Set(rep.focusLevels);
+
+    // Helper: render a single lamp progress bar row (calm palette via CSS)
+    const renderLevelBarRow = (l, compact) => {
       const segs = LAMP_LEGEND_ITEMS.map((item) => {
         const cnt = l.counts[item.countKey];
         if (!cnt) return '';
         const pct = (cnt / l.played) * 100;
         return `<div class="lamp-bar-seg lamp-${item.key}" data-lamp="${item.key}" style="width:${pct.toFixed(2)}%;"></div>`;
       }).join('');
+      const hcCleared = l.counts.HC + l.counts.EXHC + l.counts.FC;
+      const shownClr = evalGauge === 'hc' ? hcCleared : l.clearedNc;
+      const shownRate = l.played ? (shownClr / l.played) * 100 : 0;
       return `
-        <div class="lv-prog-row">
+        <div class="lv-prog-row ${compact ? 'is-compact' : ''}">
           <button type="button" class="btn btn-sm jump-lv-btn mono" data-jump-lv="${l.lv}" title="点击跳转到难度表查看 ★${l.lv} 清灯分布">★${l.lv}</button>
-          <div class="lamp-bar-track" data-lv="${l.lv}">${segs}</div>
-          <div class="mono" style="text-align:right;color:var(--muted);font-size:11.5px;white-space:nowrap;">
-            <b style="color:var(--ink);">${l.clearedNc}</b>/${l.played} <span style="opacity:0.75;">(${(l.ncRate * 100).toFixed(0)}%)</span>
+          <div class="lamp-bar-track ${compact ? 'is-compact' : ''}" data-lv="${l.lv}">${segs}</div>
+          <div class="mono lv-prog-stat">
+            <b style="color:var(--ink);">${shownClr}</b>/${l.played} <span style="opacity:0.7;">(${shownRate.toFixed(0)}%)</span>
           </div>
         </div>
       `;
-    }).join('');
+    };
 
-    // Build Recommendation Tab Content
-    const recData = rep.recommendations;
-    let coachContentHtml = '';
+    // Focus-level mini lamp preview (top 2-3 active levels only — keeps Hero calm & informative)
+    const heroLvs = [...activeLvs]
+      .filter((l) => focusSet.has(l.lv))
+      .sort((a, b) => b.lv - a.lv);
+    const heroLampRowsHtml = (heroLvs.length ? heroLvs : activeLvs.slice(-3).reverse())
+      .map((l) => renderLevelBarRow(l, true))
+      .join('');
 
-    if (state.csvCoachTab === 'quick') {
-      coachContentHtml = recData.quickWins.length ? `
-        <div style="font-size:12px;color:var(--muted);">
-          以下谱面你已有游玩记录但尚未达到目标血条（<b>${recData.targetGauge.toUpperCase()}</b>），且物理定数低于或紧贴你的能力线 / 历史 BP 接近过关，是当前性价比最高的“立刻推灯”目标：
-        </div>
-        <div class="rec-grid-2">
-          ${recData.quickWins.map((q) => {
-            const c = q.chart;
-            const r = q.rec;
-            return `
-              <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-                  <div class="truncate" style="font-weight:700;font-size:12.5px;">
-                    <span class="chip-lv mono">★${c.lv}</span>
-                    <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
-                    ${esc(c.title)}
-                  </div>
-                  <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
-                    ${renderLampBadge(r.lampMeta)}
-                    ${renderPracticeLink(c, true)}
-                  </div>
-                </div>
-                <div class="mono" style="font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;">
-                  <span>${esc(q.reason)}</span>
-                  <span>${recData.targetGauge.toUpperCase()} CP <b>${c['s_' + recData.targetGauge].toFixed(1)}</b> · 推荐 ${esc(c.bestOpt)}</span>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      ` : '<div style="font-size:12.5px;color:var(--muted);padding:16px 0;">当前目标等级与血条下暂无待复仇的已游玩谱面，可以切换到「地力冲级主线」探索新曲！</div>';
-    } else if (state.csvCoachTab === 'weak') {
-      coachContentHtml = recData.weaknessLadders.map((wl) => {
-        const ax = wl.axis;
-        return `
-          <div class="ladder-card">
-            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="width:10px;height:10px;border-radius:50%;background:${ax.color};"></span>
-                <span style="font-weight:800;font-size:14px;">专项补强：${esc(ax.label)}</span>
-                <span class="verdict-pill ${ax.strengthIndex <= -4 ? 'verdict-neg' : 'verdict-mid'} mono">擅长指数 ${ax.strengthIndex > 0 ? '+' : ''}${ax.strengthIndex}</span>
-              </div>
-              <span style="font-size:11.5px;color:var(--accent-ink);font-weight:600;">推荐选项思路：${esc(ax.optTip)}</span>
+    // Slip-filter transparency banner (directly answers feedback #2!)
+    const maxFiltered = Math.max(
+      rep.irt.ec?.slipFiltered || 0,
+      rep.irt.nc?.slipFiltered || 0,
+      rep.irt.hc?.slipFiltered || 0
+    );
+    const slipNoticeHtml = maxFiltered >= 15
+      ? `<div class="csv-slip-note">已启用 4PL 防拉低前沿校准：自动降权低区未复打 / Assist 异常，避免「高难已白灯、低难未复打」拉低评级。</div>`
+      : '';
+
+    const styleObj = (A && A.SP_GRIP_STYLES && A.SP_GRIP_STYLES[state.spStyle]) || { key: '1048', short: '1048式', label: '1048式（完全固定）', desc: '' };
+    const styleOptionsHtml = (A && A.SP_GRIP_STYLES)
+      ? Object.values(A.SP_GRIP_STYLES).map((st) => `<option value="${st.key}" ${state.spStyle === st.key ? 'selected' : ''}>${esc(st.short)}</option>`).join('')
+      : '';
+
+    const pgSummaryTxt = rep.avgPgRatio !== null
+      ? (rep.syntheticPgCount > 0
+        ? `<span title="源 CSV 中有 ${rep.syntheticPgCount} 张谱面为占位导出值，已自动过滤；按含真实判定细分的 ${rep.realPgCount} 谱计算">PG ${rep.avgPgRatio.toFixed(1)}% (${rep.realPgCount}谱)</span>`
+        : `PG ${rep.avgPgRatio.toFixed(1)}%`)
+      : '';
+    const bpSummaryTxt = rep.avgFocusBp !== null ? `均BP ${rep.avgFocusBp.toFixed(0)}` : '';
+    const scoreSubTxt = [pgSummaryTxt, bpSummaryTxt].filter(Boolean).join(' · ') || `本代 ${rep.scoredCount} 谱`;
+
+    // Build active section tab HTML
+    const activeSec = state.csvSectionTab || 'overview';
+    let sectionBodyHtml = '';
+
+    if (activeSec === 'overview') {
+      sectionBodyHtml = `
+        <div class="csv-two-col">
+          <div class="card diagnosis-box">
+            <div>
+              <h2 class="csv-sec-title">${modeUpper} 八维相对擅长度雷达</h2>
+              <p class="csv-sec-sub">虚线为个人综合基准线 (0)：向外突出表示同定数下明显擅长，向内凹陷表示重点短板。</p>
             </div>
-            <div style="font-size:12.5px;color:var(--ink-2);line-height:1.55;">
-              <b>练习建议：</b>${esc(ax.tip)}
+            <div class="inset-box">${renderRadarSvg(radarVals, rep.mode, 0.52)}</div>
+            <div class="csv-core-kj-grid">
+              <div class="inset-box">
+                <div class="csv-mini-lbl">地力谱表现 (${rep.coreVsKj.core.n}谱)</div>
+                <div class="mono csv-mini-val" style="color:${rep.coreVsKj.core.score >= 0 ? 'var(--pos)' : 'var(--neg)'};">${rep.coreVsKj.core.score > 0 ? '+' : ''}${rep.coreVsKj.core.score}</div>
+                <div class="mono csv-mini-sub">实测${evalGaugeShort} ${rep.coreVsKj.core.actualNcPct.toFixed(0)}% / 预期 ${rep.coreVsKj.core.expectedNcPct.toFixed(0)}%</div>
+              </div>
+              <div class="inset-box">
+                <div class="csv-mini-lbl">个人差谱表现 (${rep.coreVsKj.kojinsa.n}谱)</div>
+                <div class="mono csv-mini-val" style="color:${rep.coreVsKj.kojinsa.score >= 0 ? 'var(--pos)' : 'var(--neg)'};">${rep.coreVsKj.kojinsa.score > 0 ? '+' : ''}${rep.coreVsKj.kojinsa.score}</div>
+                <div class="mono csv-mini-sub">实测${evalGaugeShort} ${rep.coreVsKj.kojinsa.actualNcPct.toFixed(0)}% / 预期 ${rep.coreVsKj.kojinsa.expectedNcPct.toFixed(0)}%</div>
+              </div>
             </div>
-            <div class="ladder-stages">
-              ${wl.stages.map((st) => `
-                <div class="stage-col">
-                  <div class="stage-title">${esc(st.title)}</div>
-                  ${st.picks.length ? st.picks.map((p) => {
-                    const c = p.chart;
-                    const ex = p.existing;
-                    return `
-                      <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
-                        <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
-                          <span class="truncate" style="font-weight:700;font-size:12px;">
-                            <span class="diff-${c.dChar}">[${c.dChar}]</span> ${esc(c.title)}
-                          </span>
-                          <div style="display:inline-flex;align-items:center;gap:4px;flex-shrink:0;">
-                            ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">未玩</span>'}
-                            ${renderPracticeLink(c, true)}
-                          </div>
-                        </div>
-                        <div class="mono" style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;">
-                          <span>★${c.lv} · ${esc(c.verCode)} · ${esc(c.bestOpt)}</span>
-                          <span>CP ${c['s_' + recData.targetGauge].toFixed(1)} · 轴${c.radar[ax.idx]}</span>
-                        </div>
+          </div>
+
+          <div class="card diagnosis-box">
+            <div>
+              <h2 class="csv-sec-title">八维能力强弱排序</h2>
+              <p class="csv-sec-sub">聚焦主攻区 <b>${focusRangeStr}</b> 与 <b>${evalGaugeCn}</b> 前沿，跨级/旧代与低区未复打已自动降权。</p>
+            </div>
+            <div class="csv-axis-list">
+              ${sortedAxes.map((ax) => {
+                const vCls = ax.strengthIndex >= 4 ? 'verdict-pos' : (ax.strengthIndex <= -4 ? 'verdict-neg' : 'verdict-mid');
+                const sign = ax.strengthIndex > 0 ? '+' : '';
+                return `
+                  <div class="axis-card">
+                    <div class="axis-card-top">
+                      <div style="display:flex;align-items:center;gap:7px;">
+                        <span style="font-weight:700;font-size:13px;">${esc(ax.label)}</span>
+                        <span class="verdict-pill ${vCls}">${ax.verdict} (${sign}${ax.strengthIndex})</span>
                       </div>
-                    `;
-                  }).join('') : '<div style="font-size:11.5px;color:var(--muted);padding:6px 0;">此区间内暂未找到未清的同特征 AC 曲。</div>'}
+                      <div class="mono" style="font-size:11px;color:var(--muted);">
+                        主攻 ${ax.focusN}/${ax.n} · ${evalGaugeShort} <b>${ax.actualNcPct !== null ? ax.actualNcPct.toFixed(0) + '%' : '—'}</b> (预期 ${ax.expectedNcPct !== null ? ax.expectedNcPct.toFixed(0) + '%' : '—'})${ax.deltaExPct !== null ? ` · EX ${ax.deltaExPct > 0 ? '+' : ''}${ax.deltaExPct.toFixed(1)}%` : ''}
+                      </div>
+                    </div>
+                    ${renderBipolarBar(ax.strengthIndex)}
+                    <div class="axis-examples">
+                      ${ax.highlights.length ? `<span class="ex-lbl ex-pos">高光</span>` + ax.highlights.slice(0, 2).map((h) => `<button type="button" class="pill modal-chart-btn" data-cid="${h.chart.id}" title="★${h.chart.lv} ${esc(h.chart.title)} (${h.lampMeta.short})" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${h.lampMeta.key}" style="width:6px;height:6px;"></span><span>★${h.chart.lv}</span><span class="axis-song-title truncate">${esc(h.chart.title)}</span><span>(${h.lampMeta.short})</span></button>`).join('') : ''}
+                      ${ax.struggles.length ? `<span class="ex-lbl ex-neg">卡关</span>` + ax.struggles.slice(0, 2).map((s) => `<button type="button" class="pill modal-chart-btn" data-cid="${s.chart.id}" title="★${s.chart.lv} ${esc(s.chart.title)} (${s.lampMeta.short})" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${s.lampMeta.key}" style="width:6px;height:6px;"></span><span>★${s.chart.lv}</span><span class="axis-song-title truncate">${esc(s.chart.title)}</span><span>(${s.lampMeta.short})</span></button>`).join('') : ''}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+
+        <details class="card csv-more-details">
+          <summary>展开细分维度：配置标签表现 · BPM 速度带 · 物量耐力 · 抗压结构</summary>
+          <div class="csv-equal-col" style="margin-top:12px;">
+            <div class="inset-box">
+              <h3 style="margin:0 0 8px;font-size:13.5px;font-weight:800;">细分配置标签表现（由弱到强）</h3>
+              <div>${renderMetricRows(rep.tagStats, evalGauge)}</div>
+            </div>
+            <div class="inset-box" style="display:flex;flex-direction:column;gap:8px;">
+              <h3 style="margin:0;font-size:13.5px;font-weight:800;">BPM 速度带 · 物量耐力 · 血条抗压</h3>
+              <div style="font-size:11.5px;font-weight:700;color:var(--muted);">BPM 速度区间</div>
+              <div>${renderMetricRows(rep.bpmBands, evalGauge)}</div>
+              <div style="font-size:11.5px;font-weight:700;color:var(--muted);margin-top:4px;">物量与耐力区间</div>
+              <div>${renderMetricRows(rep.staminaBands, evalGauge)}</div>
+              <div style="font-size:11.5px;font-weight:700;color:var(--muted);margin-top:4px;">血条抗压结构</div>
+              <div>${renderMetricRows([rep.lastKillStat, rep.midSpikeStat].filter((x) => x.n >= 2), evalGauge)}</div>
+            </div>
+          </div>
+        </details>
+      `;
+    } else if (activeSec === 'grip') {
+      if (isSp && rep.gripCoach) {
+        const gc = rep.gripCoach;
+        const sideLabel = state.spSide === '2p' ? '2P 右皿' : '1P 左皿';
+        const styleBtnsHtml = Object.values(A.SP_GRIP_STYLES).map((st) => `
+          <button type="button" class="grip-style-btn ${state.spStyle === st.key ? 'active' : ''}" data-sp-style="${st.key}">
+            <span class="grip-style-name">${esc(st.short)}</span>
+          </button>
+        `).join('');
+        sectionBodyHtml = `
+          <div class="card diagnosis-box">
+            <div class="csv-grip-head">
+              <div>
+                <h2 class="csv-sec-title">SP 主力手法适配 &amp; 切手势通关建议（${sideLabel}）</h2>
+                <p class="csv-sec-sub">选择你平时最常用的主力手势，系统将结合你的八维短板与未清谱面，推荐最适合切换的副手法与选项。</p>
+              </div>
+              <div class="grip-style-picker" role="group" aria-label="选择你的常用手法">${styleBtnsHtml}</div>
+            </div>
+            <div class="inset-box" style="font-size:12.5px;color:var(--ink-2);line-height:1.55;">
+              <b style="color:var(--ink);">${esc(gc.style.label)}：</b>${esc(gc.style.desc)}
+            </div>
+            <div class="csv-grip-insights">
+              ${gc.insights.map((ins) => `
+                <div class="grip-insight-card">
+                  <div class="grip-insight-top">
+                    <span class="grip-insight-title">${esc(ins.title)}</span>
+                    <span class="grip-pill grip-pill-switch">${esc(ins.action)}</span>
+                  </div>
+                  <p class="grip-insight-desc">${esc(ins.detail)}</p>
                 </div>
               `).join('')}
             </div>
           </div>
-        `;
-      }).join('');
-    } else if (state.csvCoachTab === 'core') {
-      coachContentHtml = `
-        <div style="font-size:12px;color:var(--muted);">
-          精选当前能力线附近的纯 <b>地力 (Core)</b> AC 在库谱面（剔除偏科个人差与已达成目标灯的谱面），按 <b>${recData.targetGauge.toUpperCase()} CP</b> 由浅入深排列，适合日常稳步抬升密度与指力上限：
-        </div>
-        <div class="rec-grid-2">
-          ${recData.coreLadder.length ? recData.coreLadder.map((item, idx) => {
-            const c = item.chart;
-            const ex = item.existing;
-            return `
-              <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-                  <div class="truncate" style="font-weight:700;font-size:12.5px;">
-                    <span class="mono" style="color:var(--muted);margin-right:4px;">${String(idx + 1).padStart(2, '0')}.</span>
-                    <span class="chip-lv mono">★${c.lv}</span>
-                    <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
-                    ${esc(c.title)}
-                  </div>
-                  <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
-                    ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">新曲</span>'}
-                    ${renderPracticeLink(c, true)}
-                  </div>
-                </div>
-                <div class="mono" style="font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;gap:6px;">
-                  <span>${esc(c.verCode)} ${esc(c.ver)} · ${esc(c.tags.slice(0, 2).join('/'))} · ${esc(c.bestOpt)}</span>
-                  <span>CP <b>${item.cpVal.toFixed(1)}</b> · 预计胜率 ${(item.pTarget * 100).toFixed(0)}%</span>
-                </div>
+
+          <div class="card diagnosis-box">
+            <div>
+              <h2 class="csv-sec-title">建议「切手势 / 换选项」攻克的待推灯谱面（目标：${esc(gc.targetGaugeLabel)}）</h2>
+              <p class="csv-sec-sub">从主攻区 ${focusRangeStr} 未达目标灯的 AC 在库谱面中筛选，点击任意卡片可看详细手型分布与八维雷达。</p>
+            </div>
+            ${gc.candidates.length ? `
+              <div class="rec-grid-2">
+                ${gc.candidates.map((item) => {
+                  const c = item.chart;
+                  const r = item.rec;
+                  const gRec = item.grip;
+                  return `
+                    <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                        <div class="truncate" style="font-weight:700;font-size:12.5px;">
+                          <span class="chip-lv mono">★${c.lv}</span>
+                          <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
+                          ${esc(c.title)}
+                        </div>
+                        <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
+                          ${renderLampBadge(r.lampMeta)}
+                          ${renderPracticeLink(c, true)}
+                        </div>
+                      </div>
+                      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:2px;">
+                        <span class="grip-pill ${gRec.needsSwitch ? 'grip-pill-switch' : 'grip-pill-ok'}">${esc(gRec.primary.altGrip)}</span>
+                        ${c.optGain >= 0.03 ? `<span class="grip-pill grip-pill-opt mono">${esc(c.bestOpt)} (-${(c.optGain * 100).toFixed(1)}%)</span>` : ''}
+                      </div>
+                      <div style="font-size:11.5px;color:var(--muted);line-height:1.45;">${esc(gRec.primary.reason)}</div>
+                    </div>
+                  `;
+                }).join('')}
               </div>
-            `;
-          }).join('') : '<div style="font-size:12px;color:var(--muted);padding:12px 0;">该目标条件下暂未找到合适的新地力谱面。</div>'}
-        </div>
-      `;
-    } else {
-      const renderOutlierList = (arr, isGood) => arr.length ? arr.map((r) => `
-        <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${r.chart.id}">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-            <span class="truncate" style="font-weight:700;font-size:12px;">
-              <span class="chip-lv mono">★${r.chart.lv}</span>
-              <span class="diff-${r.chart.dChar}" style="margin:0 4px;">[${r.chart.dChar}]</span>
-              ${esc(r.chart.title)}
-            </span>
-            <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
-              ${renderLampBadge(r.lampMeta)}
-              ${renderPracticeLink(r.chart, true)}
+            ` : '<div style="font-size:12.5px;color:var(--muted);padding:12px 0;">主攻区内暂无亟需切手势的未清谱面，可在「推灯练歌计划」探索更高定数新曲。</div>'}
+          </div>
+
+          <div class="card diagnosis-box">
+            <h2 class="csv-sec-title">什么是「手型减负 -X%」？</h2>
+            <div class="opt-explain-body">
+              <p><b>一句话理解：</b>把「正規 (-)」在当前 <b>${sideLabel}</b> 下的综合手型负荷记为 100%，切换推荐选项后预计降低的负荷比例就是「手型减负 -X%」。它衡量的是<b>顺手度改善</b>（缓解偏手/皿侧冲突/弱指连打/固定纵连），而不是直接减少谱面物量。</p>
+              <div class="csv-opt-guide-grid">
+                <div class="inset-box"><b>鏡 (MIRROR)</b><p>零随机方差，专治 1P 左侧 1-3 键偏重或 2P 右侧 5-7 键偏重（如 5.1.1. 2P 鏡减负 -13%）。</p></div>
+                <div class="inset-box"><b>R乱 (R-RANDOM)</b><p>12 种循环位移，在保留阶段顺手度的同时把边缘弱指轴移到中轴强指。</p></div>
+                <div class="inset-box"><b>乱 (RANDOM)</b><p>拆散 1-2/6-7 同手颤音与糟糕固定二重配置，均衡左右手密度，是中高星地力主力。</p></div>
+                <div class="inset-box"><b>S乱 (S-RANDOM)</b><p>逐音拆纵连与单键轴，仅在和弦足够低、不易误连的谱面上推荐。</p></div>
+              </div>
             </div>
           </div>
-          <div class="mono" style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;">
-            <span>[${esc(r.chart.tags.slice(0, 2).join('/'))}] ${r.exRate !== null ? `EX ${(r.exRate * 100).toFixed(1)}%` : '旧代灯'}${r.hasBp ? ` · ${r.bp} BP` : ''}</span>
-            <span style="color:${isGood ? 'var(--pos)' : 'var(--neg)'};font-weight:700;">NC CP ${r.chart.s_nc.toFixed(1)} (模型预期 ${(r.pNc * 100).toFixed(0)}%)</span>
-          </div>
-        </div>
-      `).join('') : '<div style="font-size:12px;color:var(--muted);">暂无明显异常谱面。</div>';
-
-      coachContentHtml = `
-        <div class="csv-equal-col">
-          <div style="display:flex;flex-direction:column;gap:7px;">
-            <div style="font-size:13px;font-weight:800;color:var(--pos);">高光超常发挥 Top 10（你的潜力上限证明）</div>
-            ${renderOutlierList(rep.topOverperform, true)}
-          </div>
-          <div style="display:flex;flex-direction:column;gap:7px;">
-            <div style="font-size:13px;font-weight:800;color:var(--neg);">意外翻车 / 最值得重打 Top 10</div>
-            ${renderOutlierList(rep.topUnderperform, false)}
-          </div>
-        </div>
-      `;
-    }
-
-    const djSummary = Object.entries(rep.djCounts)
-      .filter(([, cnt]) => cnt > 0)
-      .map(([k, cnt]) => `${k}:${cnt}`)
-      .join(' · ');
-
-    const missingNote = rep.missingTextageDiffs > 0
-      ? `（另有 ${rep.missingTextageDiffs} 张最新代 N/H 谱面 Textage 尚未收录）`
-      : '';
-    const focusRangeStr = `★${rep.focusLevels[0]}–★${rep.focusLevels[rep.focusLevels.length - 1]}`;
-
-    root.innerHTML = `
-      <!-- Top Import Status Banner -->
-      <div class="card csv-banner">
-        <div>
-          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
-            <span style="font-size:16px;font-weight:800;">Konami CSV 个人能力诊断报告</span>
-            <span class="pill" style="background:var(--coach-soft);color:var(--coach-ink);border-color:transparent;">${esc(rep.filename)}</span>
-            <span class="pill mono">${modeUpper} 模式</span>
-          </div>
-          <div style="font-size:12px;color:var(--muted);margin-top:3px;">
-            成功匹配 <b style="color:var(--ink);">${rep.matchedSongs} / ${rep.totalCsvSongs}</b> 首歌曲 · <b style="color:var(--ink);">${rep.playedCount}</b> 张已解析游玩谱面${missingNote} · 其中本代有详细分数 <b>${rep.scoredCount}</b> 谱 / 继承灯 <b>${rep.carryoverCount}</b> 谱 · 最近游玩：${esc(rep.latestPlayDate)}
-          </div>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
-          ${rep.mode === 'sp' ? `
-            <div class="seg-group sp-side-group" role="group" aria-label="SP 1P/2P 侧位切换">
-              <button type="button" class="seg-btn csv-sp-side-btn ${state.spSide === '1p' ? 'active' : ''}" data-sp-side="1p">1P 左皿</button>
-              <button type="button" class="seg-btn csv-sp-side-btn ${state.spSide === '2p' ? 'active' : ''}" data-sp-side="2p">2P 右皿</button>
-            </div>
-          ` : ''}
-          <div class="seg-group">
-            <button type="button" class="seg-btn csv-mode-btn ${rep.mode === 'sp' ? 'active' : ''}" data-cmode="sp">按 SP 分析</button>
-            <button type="button" class="seg-btn csv-mode-btn ${rep.mode === 'dp' ? 'active' : ''}" data-cmode="dp">按 DP 分析</button>
-          </div>
-          <button type="button" id="btn-csv-reimport" class="btn btn-coach">导入新 CSV</button>
-          <button type="button" id="btn-csv-clear" class="btn btn-danger">清除记录</button>
-        </div>
-      </div>
-
-      <!-- 4 Executive KPI Cards -->
-      <div class="csv-kpi-grid">
-        <div class="card csv-kpi-card">
-          <div class="kpi-label">NC 蓝灯推定能力值 (IRT 50%线)</div>
-          <div class="kpi-val mono" style="color:#38bdf8;">${rep.irt.nc?.theta !== null && rep.irt.nc?.theta !== undefined ? `CP ${rep.irt.nc.theta.toFixed(1)}` : '样本不足'}</div>
-          <div class="kpi-sub">${rep.irt.nc?.eq ? `约 ${rep.irt.nc.eq.label} · 最高 NC CP ${rep.irt.nc.maxPos}` : '需更多清灯/未过样本'}</div>
-        </div>
-        <div class="card csv-kpi-card">
-          <div class="kpi-label">EC 绿灯 / HC 白灯能力估算</div>
-          <div class="kpi-val mono" style="font-size:15px;">
-            <span style="color:#4ade80;">EC ${rep.irt.ec?.theta?.toFixed(1) ?? '—'}</span>
-            <span style="color:var(--muted);margin:0 4px;">/</span>
-            <span style="color:var(--ink);">HC ${rep.irt.hc?.theta?.toFixed(1) ?? '—'}</span>
-          </div>
-          <div class="kpi-sub">${rep.irt.hc?.note ? esc(rep.irt.hc.note) : `EC≈${rep.irt.ec?.eq?.label || '—'} · HC最高 ${rep.irt.hc?.maxPos ?? '—'}`}</div>
-        </div>
-        <div class="card csv-kpi-card">
-          <div class="kpi-label">主攻区间得分力与判定精度</div>
-          <div class="kpi-val mono">${rep.avgExPct !== null ? `${rep.avgExPct.toFixed(1)}% EX` : '无分数数据'}</div>
-          <div class="kpi-sub mono">${[
-            rep.avgPgRatio !== null
-              ? (rep.syntheticPgCount > 0
-                ? `<span title="源 CSV 中有 ${rep.syntheticPgCount} 张谱面为 PGreat=⌊EX/2⌋、Great=EX%2 的占位导出值，已自动过滤；当前按含真实判定细分的 ${rep.realPgCount} 谱计算">PG率 ${rep.avgPgRatio.toFixed(1)}% (${rep.realPgCount}谱实测)</span>`
-                : `PG率 ${rep.avgPgRatio.toFixed(1)}%`)
-              : (rep.syntheticPgCount > 0
-                ? '<span title="源 CSV 仅包含 EX 分推算的占位 PG/GR，未保存真实判定细分">PG率 — (CSV未含细分)</span>'
-                : ''),
-            rep.avgFocusBp !== null ? `主攻均BP ${rep.avgFocusBp.toFixed(0)}` : '',
-            djSummary,
-          ].filter(Boolean).join(' · ')}</div>
-        </div>
-        <div class="card csv-kpi-card">
-          <div class="kpi-label">核心擅长 vs 首要补强</div>
-          <div class="kpi-val" style="font-size:14px;line-height:1.35;">
-            <span style="color:var(--pos);">强: ${rep.topStrengths.length ? esc(rep.topStrengths.slice(0, 2).map((a) => a.short).join('·')) : '均衡'}</span>
-            <span style="color:var(--muted);margin:0 5px;">|</span>
-            <span style="color:var(--neg);">弱: ${rep.topWeaknesses.length ? esc(rep.topWeaknesses.slice(0, 2).map((a) => a.short).join('·')) : '无明显短板'}</span>
-          </div>
-          <div class="kpi-sub">基于主攻区 ${focusRangeStr} 与本代实测加权残差</div>
-        </div>
-      </div>
-
-      <!-- Executive Coaching Summary -->
-      <div class="card diagnosis-box">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <h2 style="margin:0;font-size:14.5px;font-weight:800;">综合诊断结论</h2>
-          <button type="button" id="btn-jump-explorer" class="btn btn-sm">去 ${modeUpper} 难度表查看全曲清灯叠加 →</button>
-        </div>
-        <ul class="diagnosis-list">
-          ${rep.summaryLines.map((l) => `<li>${esc(l)}</li>`).join('')}
-        </ul>
-      </div>
-
-      <!-- Level-by-Level Clear Lamp Progress -->
-      <div class="card diagnosis-box">
-        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
-          <h2 style="margin:0;font-size:14px;font-weight:800;">各等级清灯分布（悬停查看各灯曲数，点击跳转难度表）</h2>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted);">
-            ${LAMP_LEGEND_ITEMS.map((item) => `<span style="display:inline-flex;align-items:center;gap:4px;"><span class="lamp-dot lamp-static lamp-${item.key}"></span>${item.label}</span>`).join('')}
-          </div>
-        </div>
-        <div class="level-progress-grid">${levelBarsHtml}</div>
-      </div>
-
-      <!-- 8-Axis Strength & Weakness Radar + Detailed Breakdown -->
-      <div class="csv-two-col">
-        <div class="card diagnosis-box">
-          <div>
-            <h2 style="margin:0;font-size:14.5px;font-weight:800;">${modeUpper} 八维相对擅长度雷达</h2>
-            <p style="margin:3px 0 0;font-size:12px;color:var(--muted);">
-              橙色虚线为个人综合基准线 (0)：向外突出（绿点）表示该维度明显优于同定数均值，向内凹陷（红点）表示重点短板。
-            </p>
-          </div>
-          <div class="inset-box">
-            ${renderRadarSvg(radarVals, rep.mode, 0.52)}
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
-            <div class="inset-box">
-              <div style="font-size:11px;color:var(--muted);">地力谱表现 (${rep.coreVsKj.core.n}谱)</div>
-              <div class="mono" style="font-size:15px;font-weight:800;color:${rep.coreVsKj.core.score >= 0 ? 'var(--pos)' : 'var(--neg)'};">${rep.coreVsKj.core.score > 0 ? '+' : ''}${rep.coreVsKj.core.score}</div>
-              <div class="mono" style="font-size:11px;color:var(--muted);">实测NC ${rep.coreVsKj.core.actualNcPct.toFixed(0)}% / 预期 ${rep.coreVsKj.core.expectedNcPct.toFixed(0)}%</div>
-            </div>
-            <div class="inset-box">
-              <div style="font-size:11px;color:var(--muted);">个人差谱表现 (${rep.coreVsKj.kojinsa.n}谱)</div>
-              <div class="mono" style="font-size:15px;font-weight:800;color:${rep.coreVsKj.kojinsa.score >= 0 ? 'var(--pos)' : 'var(--neg)'};">${rep.coreVsKj.kojinsa.score > 0 ? '+' : ''}${rep.coreVsKj.kojinsa.score}</div>
-              <div class="mono" style="font-size:11px;color:var(--muted);">实测NC ${rep.coreVsKj.kojinsa.actualNcPct.toFixed(0)}% / 预期 ${rep.coreVsKj.kojinsa.expectedNcPct.toFixed(0)}%</div>
+        `;
+      } else {
+        sectionBodyHtml = `
+          <div class="card diagnosis-box">
+            <h2 class="csv-sec-title">DP 选项与手型减负说明</h2>
+            <div class="opt-explain-body">
+              <p>DP 模式采用标准 AC 合法选项（<code>FLIP</code> + 1P/2P 独立 <code>OFF / MIR / R-RAN / RAN / S-RAN</code>）生物力学求解；<b>手型减负 -X%</b> 表示相对正規预计降低的单手弱指、無理押し、無理皿与左右盘失衡负荷比例。点击任意谱面或前往「DP 选项减负榜」可查看逐谱推荐。</p>
             </div>
           </div>
-        </div>
+        `;
+      }
+    } else if (activeSec === 'coach') {
+      const recData = rep.recommendations;
+      const renderGripTag = (c) => {
+        if (!isSp || !A?.recommendGripForChart) return '';
+        const g = A.recommendGripForChart(c, state.spStyle, state.spSide);
+        return g.needsSwitch ? `<span class="grip-pill grip-pill-mini">${esc(g.primary.badge)}</span>` : '';
+      };
 
-        <div class="card diagnosis-box">
-          <div>
-            <h2 style="margin:0;font-size:14.5px;font-weight:800;">八维能力强弱排序与典型谱面例证</h2>
-            <p style="margin:3px 0 0;font-size:11.5px;color:var(--muted);">
-              已聚焦主攻区间 <b>${focusRangeStr}</b> 与本代实测数据：跨级谱面（区间外）与上代继承旧灯（尤指旧代 FAILED）已自动降权。
-            </p>
+      let coachContentHtml = '';
+      if (state.csvCoachTab === 'quick') {
+        coachContentHtml = recData.quickWins.length ? `
+          <div style="font-size:12px;color:var(--muted);">
+            已有游玩记录但尚未达成 <b>${recData.targetGauge.toUpperCase()}</b>，且定数紧贴或低于当前能力线的最高性价比目标：
           </div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            ${sortedAxes.map((ax) => {
-              const vCls = ax.strengthIndex >= 4 ? 'verdict-pos' : (ax.strengthIndex <= -4 ? 'verdict-neg' : 'verdict-mid');
-              const sign = ax.strengthIndex > 0 ? '+' : '';
+          <div class="rec-grid-2">
+            ${recData.quickWins.map((q) => {
+              const c = q.chart;
+              const r = q.rec;
               return `
-                <div class="axis-card">
-                  <div class="axis-card-top">
-                    <div style="display:flex;align-items:center;gap:7px;">
-                      <span class="lamp-dot" style="background:${ax.color};width:9px;height:9px;"></span>
-                      <span style="font-weight:800;font-size:13px;">${esc(ax.label)}</span>
-                      <span class="verdict-pill ${vCls}">${ax.verdict} (${sign}${ax.strengthIndex})</span>
+                <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div class="truncate" style="font-weight:700;font-size:12.5px;">
+                      <span class="chip-lv mono">★${c.lv}</span>
+                      <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
+                      ${esc(c.title)}
                     </div>
-                    <div class="mono" style="font-size:11.5px;color:var(--muted);">
-                      主攻 ${ax.focusN}/${ax.n} 谱 · 实测NC <b>${ax.actualNcPct !== null ? ax.actualNcPct.toFixed(0) + '%' : '—'}</b> (预期 ${ax.expectedNcPct !== null ? ax.expectedNcPct.toFixed(0) + '%' : '—'})${ax.deltaExPct !== null ? ` · EX差 ${ax.deltaExPct > 0 ? '+' : ''}${ax.deltaExPct.toFixed(1)}%` : ''}
+                    <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
+                      ${renderGripTag(c)}
+                      ${renderLampBadge(r.lampMeta)}
+                      ${renderPracticeLink(c, true)}
                     </div>
                   </div>
-                  ${renderBipolarBar(ax.strengthIndex)}
-                  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;">
-                    ${ax.highlights.length ? `<span style="color:var(--pos);font-weight:700;">高光:</span>` + ax.highlights.slice(0, 2).map((h) => `<button type="button" class="pill modal-chart-btn" data-cid="${h.chart.id}" title="★${h.chart.lv} ${esc(h.chart.title)} (${h.lampMeta.short}${h.isCarryover ? '·旧' : ''})" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${h.lampMeta.key}" style="width:6px;height:6px;"></span><span>★${h.chart.lv}</span><span class="axis-song-title truncate">${esc(h.chart.title)}</span><span>(${h.lampMeta.short}${h.isCarryover ? '·旧' : ''})</span></button>`).join('') : ''}
-                    ${ax.struggles.length ? `<span style="color:var(--neg);font-weight:700;margin-left:4px;">卡关:</span>` + ax.struggles.slice(0, 2).map((s) => `<button type="button" class="pill modal-chart-btn" data-cid="${s.chart.id}" title="★${s.chart.lv} ${esc(s.chart.title)} (${s.lampMeta.short}${s.isCarryover ? '·旧' : ''})" style="cursor:pointer;gap:4px;"><span class="lamp-dot lamp-${s.lampMeta.key}" style="width:6px;height:6px;"></span><span>★${s.chart.lv}</span><span class="axis-song-title truncate">${esc(s.chart.title)}</span><span>(${s.lampMeta.short}${s.isCarryover ? '·旧' : ''})</span></button>`).join('') : ''}
+                  <div class="mono" style="font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;">
+                    <span>${esc(q.reason)}</span>
+                    <span>${recData.targetGauge.toUpperCase()} CP <b>${c['s_' + recData.targetGauge].toFixed(1)}</b> · ${esc(c.bestOpt)}</span>
                   </div>
                 </div>
               `;
             }).join('')}
           </div>
-        </div>
-      </div>
-
-      <!-- Pattern Tag, BPM & Stamina Diagnostics -->
-      <div class="csv-equal-col">
-        <div class="card diagnosis-box">
-          <h2 style="margin:0;font-size:14px;font-weight:800;">细分配置标签表现（由弱到强）</h2>
-          <div>${renderMetricRows(rep.tagStats)}</div>
-        </div>
-        <div class="card diagnosis-box">
-          <h2 style="margin:0;font-size:14px;font-weight:800;">BPM 速度带 · 物量耐力 · 结构抗压表现</h2>
-          <div style="font-size:11.5px;font-weight:700;color:var(--muted);">BPM 速度区间</div>
-          <div>${renderMetricRows(rep.bpmBands)}</div>
-          <div style="font-size:11.5px;font-weight:700;color:var(--muted);margin-top:6px;">物量与耐力区间</div>
-          <div>${renderMetricRows(rep.staminaBands)}</div>
-          <div style="font-size:11.5px;font-weight:700;color:var(--muted);margin-top:6px;">血条抗压结构</div>
-          <div>${renderMetricRows([rep.lastKillStat, rep.midSpikeStat].filter((x) => x.n >= 2))}</div>
-        </div>
-      </div>
-
-      <!-- Actionable Progression Coach & Curated Song Ladders -->
-      <div class="card coach-section">
-        <div class="coach-head">
-          <div>
-            <h2 style="margin:0;font-size:16px;font-weight:800;">进步上升指导 &amp; 个性化上机练歌清单</h2>
-            <div style="font-size:12px;color:var(--muted);margin-top:2px;">
-              基于你的实测能力线与 AC 在库全谱面自动筛选，点击任意曲目可展开八维雷达与压力曲线，SP 谱面可直接点击「练习 ↗」导入 <b>iidx-play.cee.ee</b> 练习。
+        ` : '<div style="font-size:12.5px;color:var(--muted);padding:16px 0;">当前目标等级与血条下暂无待复仇谱面，可切换「地力主线」探索新曲。</div>';
+      } else if (state.csvCoachTab === 'weak') {
+        coachContentHtml = recData.weaknessLadders.map((wl) => {
+          const ax = wl.axis;
+          return `
+            <div class="ladder-card">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-weight:800;font-size:14px;">专项补强：${esc(ax.label)}</span>
+                  <span class="verdict-pill ${ax.strengthIndex <= -4 ? 'verdict-neg' : 'verdict-mid'} mono">擅长指数 ${ax.strengthIndex > 0 ? '+' : ''}${ax.strengthIndex}</span>
+                </div>
+                <span style="font-size:11.5px;color:var(--accent-ink);font-weight:600;">选项思路：${esc(ax.optTip)}</span>
+              </div>
+              <div style="font-size:12px;color:var(--ink-2);line-height:1.55;"><b>练习建议：</b>${esc(ax.tip)}</div>
+              <div class="ladder-stages">
+                ${wl.stages.map((st) => `
+                  <div class="stage-col">
+                    <div class="stage-title">${esc(st.title)}</div>
+                    ${st.picks.length ? st.picks.map((p) => {
+                      const c = p.chart;
+                      const ex = p.existing;
+                      return `
+                        <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
+                          <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
+                            <span class="truncate" style="font-weight:700;font-size:12px;">
+                              <span class="diff-${c.dChar}">[${c.dChar}]</span> ${esc(c.title)}
+                            </span>
+                            <div style="display:inline-flex;align-items:center;gap:4px;flex-shrink:0;">
+                              ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">未玩</span>'}
+                              ${renderPracticeLink(c, true)}
+                            </div>
+                          </div>
+                          <div class="mono" style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;">
+                            <span>★${c.lv} · ${esc(c.bestOpt)}</span>
+                            <span>CP ${c['s_' + recData.targetGauge].toFixed(1)} · 轴${c.radar[ax.idx]}</span>
+                          </div>
+                        </div>
+                      `;
+                    }).join('') : '<div style="font-size:11.5px;color:var(--muted);padding:6px 0;">此区间内暂未找到未清同特征曲。</div>'}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }).join('');
+      } else if (state.csvCoachTab === 'core') {
+        coachContentHtml = `
+          <div style="font-size:12px;color:var(--muted);">
+            精选能力线附近的纯 <b>地力 (Core)</b> AC 在库谱面，按 <b>${recData.targetGauge.toUpperCase()} CP</b> 由浅入深排列：
+          </div>
+          <div class="rec-grid-2">
+            ${recData.coreLadder.length ? recData.coreLadder.map((item, idx) => {
+              const c = item.chart;
+              const ex = item.existing;
+              return `
+                <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${c.id}">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                    <div class="truncate" style="font-weight:700;font-size:12.5px;">
+                      <span class="mono" style="color:var(--muted);margin-right:4px;">${String(idx + 1).padStart(2, '0')}.</span>
+                      <span class="chip-lv mono">★${c.lv}</span>
+                      <span class="diff-${c.dChar}" style="margin:0 4px;">[${c.dChar}]</span>
+                      ${esc(c.title)}
+                    </div>
+                    <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
+                      ${ex ? renderLampBadge(ex.lampMeta) : '<span class="pill" style="font-size:10px;padding:1px 5px;">新曲</span>'}
+                      ${renderPracticeLink(c, true)}
+                    </div>
+                  </div>
+                  <div class="mono" style="font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;gap:6px;">
+                    <span>${esc(c.verCode)} · ${esc(c.tags.slice(0, 2).join('/'))} · ${esc(c.bestOpt)}</span>
+                    <span>CP <b>${item.cpVal.toFixed(1)}</b> · 预期胜率 ${(item.pTarget * 100).toFixed(0)}%</span>
+                  </div>
+                </div>
+              `;
+            }).join('') : '<div style="font-size:12px;color:var(--muted);padding:12px 0;">该目标条件下暂未找到合适的新地力谱面。</div>'}
+          </div>
+        `;
+      } else {
+        const sKeyShow = evalGauge === 'hc' ? 's_hc' : 's_nc';
+        const renderOutlierList = (arr, isGood) => arr.length ? arr.map((r) => `
+          <div role="button" tabindex="0" class="song-rec-item modal-chart-btn" data-cid="${r.chart.id}">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+              <span class="truncate" style="font-weight:700;font-size:12px;">
+                <span class="chip-lv mono">★${r.chart.lv}</span>
+                <span class="diff-${r.chart.dChar}" style="margin:0 4px;">[${r.chart.dChar}]</span>
+                ${esc(r.chart.title)}
+              </span>
+              <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;">
+                ${renderGripTag(r.chart)}
+                ${renderLampBadge(r.lampMeta)}
+                ${renderPracticeLink(r.chart, true)}
+              </div>
+            </div>
+            <div class="mono" style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;">
+              <span>[${esc(r.chart.tags.slice(0, 2).join('/'))}] ${r.exRate !== null ? `EX ${(r.exRate * 100).toFixed(1)}%` : '旧代灯'}${r.hasBp ? ` · ${r.bp} BP` : ''}</span>
+              <span style="color:${isGood ? 'var(--pos)' : 'var(--neg)'};font-weight:700;">${evalGaugeShort} CP ${r.chart[sKeyShow].toFixed(1)} (预期 ${(r.pNc * 100).toFixed(0)}%)</span>
             </div>
           </div>
-          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
-            <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;">
-              目标血条
-              <select id="csv-target-gauge" class="select-input">
-                <option value="ec" ${state.csvTargetGauge === 'ec' ? 'selected' : ''}>EC 绿灯</option>
-                <option value="nc" ${state.csvTargetGauge === 'nc' ? 'selected' : ''}>NC 蓝灯</option>
-                <option value="hc" ${state.csvTargetGauge === 'hc' ? 'selected' : ''}>HC 白灯</option>
-                <option value="exhc" ${state.csvTargetGauge === 'exhc' ? 'selected' : ''}>EXHC 红黄灯</option>
-              </select>
-            </label>
-            <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;">
-              目标等级
-              <select id="csv-target-lv" class="select-input">
-                <option value="0" ${state.csvTargetLevel === 0 ? 'selected' : ''}>自动匹配主攻区 (★${Math.max(1, rep.primaryLevel - 1)}–★${Math.min(12, rep.primaryLevel + 1)})</option>
-                ${ALL_LEVELS.map((lv) => `<option value="${lv}" ${state.csvTargetLevel === lv ? 'selected' : ''}>定向攻克 ★${lv}</option>`).join('')}
-              </select>
-            </label>
+        `).join('') : '<div style="font-size:12px;color:var(--muted);">暂无明显异常谱面。</div>';
+
+        coachContentHtml = `
+          <div class="csv-equal-col">
+            <div style="display:flex;flex-direction:column;gap:7px;">
+              <div style="font-size:13px;font-weight:800;color:var(--pos);">高光超常发挥 Top 10</div>
+              ${renderOutlierList(rep.topOverperform, true)}
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px;">
+              <div style="font-size:13px;font-weight:800;color:var(--neg);">最值得重打 / 复仇 Top 10</div>
+              ${renderOutlierList(rep.topUnderperform, false)}
+            </div>
           </div>
+        `;
+      }
+
+      sectionBodyHtml = `
+        <div class="card coach-section">
+          <div class="coach-head">
+            <div>
+              <h2 class="csv-sec-title">推灯练歌清单（目标：${recData.targetGauge.toUpperCase()}）</h2>
+              <div class="csv-sec-sub">点击任意曲目弹出详情与手法建议，SP 谱面可点击「练习 ↗」直接导入 iidx-play.cee.ee。</div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+              <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;">
+                目标血条
+                <select id="csv-target-gauge" class="select-input">
+                  <option value="ec" ${state.csvTargetGauge === 'ec' ? 'selected' : ''}>EC 绿灯</option>
+                  <option value="nc" ${state.csvTargetGauge === 'nc' ? 'selected' : ''}>NC 蓝灯</option>
+                  <option value="hc" ${state.csvTargetGauge === 'hc' ? 'selected' : ''}>HC 白灯</option>
+                  <option value="exhc" ${state.csvTargetGauge === 'exhc' ? 'selected' : ''}>EXHC 黄灯</option>
+                </select>
+              </label>
+              <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;">
+                目标等级
+                <select id="csv-target-lv" class="select-input">
+                  <option value="0" ${state.csvTargetLevel === 0 ? 'selected' : ''}>主攻区 (${focusRangeStr})</option>
+                  ${ALL_LEVELS.map((lv) => `<option value="${lv}" ${state.csvTargetLevel === lv ? 'selected' : ''}>定向攻克 ★${lv}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="coach-tabs">
+            <button type="button" class="coach-tab ${state.csvCoachTab === 'quick' ? 'active' : ''}" data-ctab="quick">临门一脚 (${recData.quickWins.length})</button>
+            <button type="button" class="coach-tab ${state.csvCoachTab === 'weak' ? 'active' : ''}" data-ctab="weak">补短板三阶 (${recData.weaknessLadders.length}项)</button>
+            <button type="button" class="coach-tab ${state.csvCoachTab === 'core' ? 'active' : ''}" data-ctab="core">地力主线 (${recData.coreLadder.length})</button>
+            <button type="button" class="coach-tab ${state.csvCoachTab === 'outliers' ? 'active' : ''}" data-ctab="outliers">高光 &amp; 复仇</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px;">${coachContentHtml}</div>
+        </div>
+      `;
+    } else {
+      const primaryLvs = activeLvs.filter((l) => focusSet.has(l.lv) || l.played >= 60).sort((a, b) => b.lv - a.lv);
+      const primaryLvSet = new Set(primaryLvs.map((l) => l.lv));
+      const otherLvs = activeLvs.filter((l) => !primaryLvSet.has(l.lv)).sort((a, b) => b.lv - a.lv);
+      const djSummary = Object.entries(rep.djCounts).filter(([, cnt]) => cnt > 0).map(([k, cnt]) => `${k} ${cnt}`).join(' · ');
+
+      sectionBodyHtml = `
+        <div class="card diagnosis-box">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
+            <div>
+              <h2 class="csv-sec-title">各等级清灯分布（右侧显示 ${evalGaugeShort}+ 达成率）</h2>
+              <p class="csv-sec-sub">悬停或点按进度条查看各灯曲数，点击星级跳转难度表查看逐曲清灯叠加。</p>
+            </div>
+            <div class="csv-lamp-legend">
+              ${LAMP_LEGEND_ITEMS.map((item) => `<span class="csv-legend-item"><span class="lamp-dot lamp-static lamp-${item.key}"></span>${item.label}</span>`).join('')}
+            </div>
+          </div>
+
+          <div class="csv-lamp-group-title">主攻与高频游玩等级</div>
+          <div class="level-progress-grid">${primaryLvs.map((l) => renderLevelBarRow(l, false)).join('')}</div>
+
+          ${otherLvs.length ? `
+            <details class="csv-other-lvs" ${primaryLvs.length <= 2 ? 'open' : ''}>
+              <summary>其他已游玩等级（${otherLvs.length} 个星级，共 ${otherLvs.reduce((a, b) => a + b.played, 0)} 谱）</summary>
+              <div class="level-progress-grid" style="margin-top:10px;">${otherLvs.map((l) => renderLevelBarRow(l, false)).join('')}</div>
+            </details>
+          ` : ''}
+
+          ${djSummary ? `<div class="mono" style="font-size:11.5px;color:var(--muted);padding-top:6px;border-top:1px solid var(--border);">DJ 评价分布：${esc(djSummary)}</div>` : ''}
+        </div>
+      `;
+    }
+
+    const gaugeCells = [
+      { key: 'ec', label: 'EC 绿灯', data: rep.irt.ec, cls: 'g-ec' },
+      { key: 'nc', label: 'NC 蓝灯', data: rep.irt.nc, cls: 'g-nc' },
+      { key: 'hc', label: 'HC 白灯', data: rep.irt.hc, cls: 'g-hc' },
+      { key: 'exhc', label: 'EXHC 黄灯', data: rep.irt.exhc, cls: 'g-ex' },
+    ];
+
+    root.innerHTML = `
+      <!-- 1. Slim Utility Toolbar -->
+      <div class="card csv-toolbar">
+        <div class="csv-toolbar-meta">
+          <span class="csv-file-name truncate" title="${esc(rep.filename)}">${esc(rep.filename)}</span>
+          <span class="csv-meta-sep">·</span>
+          <span class="mono"><b>${rep.matchedSongs}</b>/${rep.totalCsvSongs} 曲 · <b>${rep.playedCount}</b> 谱 · ${esc(rep.latestPlayDate)}</span>
+        </div>
+        <div class="csv-toolbar-actions">
+          ${isSp ? `
+            <div class="seg-group sp-side-group" role="group" aria-label="SP 1P/2P 侧位切换">
+              <button type="button" class="seg-btn csv-sp-side-btn ${state.spSide === '1p' ? 'active' : ''}" data-sp-side="1p">1P</button>
+              <button type="button" class="seg-btn csv-sp-side-btn ${state.spSide === '2p' ? 'active' : ''}" data-sp-side="2p">2P</button>
+            </div>
+            <label class="csv-style-select-wrap" title="选择你的常用 SP 手法，用于定制变招通关建议">
+              <span>手法</span>
+              <select id="csv-sp-style-select" class="select-input">${styleOptionsHtml}</select>
+            </label>
+          ` : ''}
+          <div class="seg-group">
+            <button type="button" class="seg-btn csv-mode-btn ${isSp ? 'active' : ''}" data-cmode="sp">SP</button>
+            <button type="button" class="seg-btn csv-mode-btn ${!isSp ? 'active' : ''}" data-cmode="dp">DP</button>
+          </div>
+          <button type="button" id="btn-csv-reimport" class="btn btn-sm">换 CSV</button>
+          <button type="button" id="btn-csv-clear" class="btn btn-sm btn-ghost-danger">清除</button>
+        </div>
+      </div>
+
+      <!-- 2. Focused Executive Hero (1 Focal Anchor + Quiet Right Snapshot) -->
+      <div class="card csv-hero">
+        <div class="csv-hero-main">
+          <div class="csv-hero-eyebrow">${modeUpper} ${evalGaugeCn} 有效能力前沿 · 主攻 ${focusRangeStr}</div>
+          <div class="csv-hero-headline">
+            <span class="csv-hero-cp mono">${primaryIrt?.theta !== null && primaryIrt?.theta !== undefined ? `CP ${primaryIrt.theta.toFixed(1)}` : '样本不足'}</span>
+            ${primaryIrt?.eq ? `<span class="csv-hero-rank">${esc(primaryIrt.eq.label)}</span>` : ''}
+          </div>
+          <div class="csv-hero-summary">
+            ${rep.summaryLines.slice(0, 2).map((l) => `<p>${esc(l)}</p>`).join('')}
+          </div>
+          <div class="csv-gauge-strip">
+            ${gaugeCells.map((g) => `
+              <div class="csv-gauge-cell ${g.key === evalGauge ? 'is-primary' : ''}">
+                <div class="csv-gauge-lbl ${g.cls}">${g.label}</div>
+                <div class="csv-gauge-val mono">${g.data?.theta !== null && g.data?.theta !== undefined ? g.data.theta.toFixed(1) : '—'}</div>
+                <div class="csv-gauge-sub mono">${g.data?.eq ? esc(g.data.eq.label.replace(/ \(.*\)/, '')) : '样本不足'}${g.data?.maxPos ? ` · 最高 ${g.data.maxPos}` : ''}</div>
+              </div>
+            `).join('')}
+          </div>
+          ${slipNoticeHtml}
         </div>
 
-        <div class="coach-tabs">
-          <button type="button" class="coach-tab ${state.csvCoachTab === 'quick' ? 'active' : ''}" data-ctab="quick">临门一脚 · 立即可推灯 (${recData.quickWins.length})</button>
-          <button type="button" class="coach-tab ${state.csvCoachTab === 'weak' ? 'active' : ''}" data-ctab="weak">补短板三阶专项歌单 (${recData.weaknessLadders.length}项)</button>
-          <button type="button" class="coach-tab ${state.csvCoachTab === 'core' ? 'active' : ''}" data-ctab="core">地力冲级主线推荐 (${recData.coreLadder.length})</button>
-          <button type="button" class="coach-tab ${state.csvCoachTab === 'outliers' ? 'active' : ''}" data-ctab="outliers">高光超常 &amp; 翻车复盘</button>
-        </div>
+        <div class="csv-hero-side">
+          <div class="csv-snap-grid">
+            <div class="csv-snap-cell">
+              <div class="csv-mini-lbl">主攻均分</div>
+              <div class="csv-snap-val mono">${rep.avgExPct !== null ? `${rep.avgExPct.toFixed(1)}%` : '—'}</div>
+              <div class="csv-mini-sub mono">${scoreSubTxt}</div>
+            </div>
+            <div class="csv-snap-cell">
+              <div class="csv-mini-lbl">核心擅长</div>
+              <div class="csv-snap-val" style="color:var(--pos);">${rep.topStrengths.length ? esc(rep.topStrengths.slice(0, 2).map((a) => a.short).join(' · ')) : '均衡'}</div>
+              <div class="csv-mini-sub">${rep.topStrengths[0] ? `+${rep.topStrengths[0].strengthIndex} 相对残差` : '无明显偏科'}</div>
+            </div>
+            <div class="csv-snap-cell">
+              <div class="csv-mini-lbl">首要补强</div>
+              <div class="csv-snap-val" style="color:var(--neg);">${rep.topWeaknesses.length ? esc(rep.topWeaknesses.slice(0, 2).map((a) => a.short).join(' · ')) : '无明显短板'}</div>
+              <div class="csv-mini-sub">${rep.topWeaknesses[0] ? `${rep.topWeaknesses[0].strengthIndex} 优先突破` : '沿地力主线推进'}</div>
+            </div>
+            <div class="csv-snap-cell">
+              <div class="csv-mini-lbl">${isSp ? '主力手法' : '模式'}</div>
+              <div class="csv-snap-val">${isSp ? esc(styleObj.short) : 'DP 双盘'}</div>
+              <div class="csv-mini-sub">
+                ${isSp ? `<button type="button" class="link-btn csv-jump-grip">查看切手势建议 →</button>` : '标准 AC 合法选项'}
+              </div>
+            </div>
+          </div>
 
-        <div style="display:flex;flex-direction:column;gap:12px;">
-          ${coachContentHtml}
+          <div class="csv-hero-lamps">
+            <div class="csv-hero-lamps-head">
+              <span>主攻区 ${evalGaugeShort} 进度</span>
+              <button type="button" class="link-btn csv-jump-lamps">全等级分布 →</button>
+            </div>
+            <div class="csv-hero-lamp-rows">${heroLampRowsHtml}</div>
+          </div>
+
+          <button type="button" id="btn-jump-explorer" class="btn btn-primary csv-hero-cta">去 ${modeUpper} 难度表查看全曲清灯叠加 →</button>
         </div>
+      </div>
+
+      <!-- 3. Calm 4-Tab Section Navigation (Eliminates PC Wall-of-Cards Clutter!) -->
+      <div class="csv-nav-tabs" role="tablist">
+        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'overview' ? 'active' : ''}" data-csec="overview">能力画像</button>
+        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'grip' ? 'active' : ''}" data-csec="grip"><span class="lbl-full">${isSp ? `手法与选项建议${rep.gripCoach?.candidates?.length ? ` (${rep.gripCoach.candidates.length})` : ''}` : '选项减负说明'}</span><span class="lbl-short">${isSp ? `手法建议${rep.gripCoach?.candidates?.length ? `(${rep.gripCoach.candidates.length})` : ''}` : '选项说明'}</span></button>
+        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'coach' ? 'active' : ''}" data-csec="coach"><span class="lbl-full">推灯练歌计划</span><span class="lbl-short">练歌计划</span></button>
+        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'lamps' ? 'active' : ''}" data-csec="lamps"><span class="lbl-full">清灯分布 (${activeLvs.length}级)</span><span class="lbl-short">清灯分布</span></button>
+      </div>
+
+      <!-- 4. Focused Active Section Content -->
+      <div class="csv-sec-body">
+        ${sectionBodyHtml}
       </div>
     `;
 
     // Bind CSV workspace controls
-    document.getElementById('btn-csv-reimport').addEventListener('click', () => {
+    document.getElementById('btn-csv-reimport')?.addEventListener('click', () => {
       document.getElementById('global-csv-file').click();
     });
-    document.getElementById('btn-csv-clear').addEventListener('click', () => {
+    document.getElementById('btn-csv-clear')?.addEventListener('click', () => {
       state.csvRawText = null;
       state.csvFilename = null;
       state.csvParsed = null;
@@ -2470,13 +2747,33 @@
       try { localStorage.removeItem(CSV_STORAGE_KEY); } catch (_) {}
       renderAll();
     });
-    document.getElementById('btn-jump-explorer').addEventListener('click', () => {
+    document.getElementById('btn-jump-explorer')?.addEventListener('click', () => {
       state.tab = rep.mode;
       state.levels = new Set([rep.primaryLevel]);
       state.tiers.clear();
       resetCpRange();
       history.replaceState(null, '', '#' + state.tab);
       renderAll();
+    });
+    document.getElementById('csv-sp-style-select')?.addEventListener('change', (e) => {
+      setSpStyle(e.target.value);
+    });
+    root.querySelectorAll('.grip-style-btn').forEach((btn) => {
+      btn.addEventListener('click', () => setSpStyle(btn.dataset.spStyle));
+    });
+    root.querySelectorAll('.csv-nav-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.csvSectionTab = btn.dataset.csec;
+        renderCsvWorkspace();
+      });
+    });
+    root.querySelector('.csv-jump-grip')?.addEventListener('click', () => {
+      state.csvSectionTab = 'grip';
+      renderCsvWorkspace();
+    });
+    root.querySelector('.csv-jump-lamps')?.addEventListener('click', () => {
+      state.csvSectionTab = 'lamps';
+      renderCsvWorkspace();
     });
     root.querySelectorAll('.csv-sp-side-btn').forEach((btn) => {
       btn.addEventListener('click', () => setSpSide(btn.dataset.spSide));
@@ -2486,6 +2783,7 @@
         const nextMode = btn.dataset.cmode;
         if (nextMode !== state.csvMode) {
           state.csvMode = nextMode;
+          state.csvTargetGaugeManual = false;
           recomputeCsvReport();
           try {
             localStorage.setItem(CSV_STORAGE_KEY, JSON.stringify({
@@ -2496,6 +2794,7 @@
         }
       });
     });
+
     const jumpToLv = (lv) => {
       hideLampTooltip();
       state.tab = rep.mode;
@@ -2582,12 +2881,14 @@
         }
       });
     });
-    document.getElementById('csv-target-gauge').addEventListener('change', (e) => {
+
+    document.getElementById('csv-target-gauge')?.addEventListener('change', (e) => {
       state.csvTargetGauge = e.target.value;
+      state.csvTargetGaugeManual = true;
       recomputeCsvReport();
       renderCsvWorkspace();
     });
-    document.getElementById('csv-target-lv').addEventListener('change', (e) => {
+    document.getElementById('csv-target-lv')?.addEventListener('change', (e) => {
       state.csvTargetLevel = Number(e.target.value);
       recomputeCsvReport();
       renderCsvWorkspace();
@@ -2852,6 +3153,10 @@
     try {
       if (localStorage.getItem(SP_SIDE_STORAGE_KEY) === '2p') {
         state.spSide = '2p';
+      }
+      const savedStyle = localStorage.getItem(SP_STYLE_STORAGE_KEY);
+      if (savedStyle && window.IIDXCsvAnalyzer?.SP_GRIP_STYLES?.[savedStyle]) {
+        state.spStyle = savedStyle;
       }
     } catch (_) {}
     VER_INFO = P.vers.map((name, idx) => ({

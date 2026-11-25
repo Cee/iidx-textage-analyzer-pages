@@ -891,20 +891,19 @@ a:hover { text-decoration: underline; }
 }
 
 /* Static (non-flashing) dots used inside Level Clear Distribution card & hover tooltip */
-.lamp-dot.lamp-static.lamp-fc {
-  animation: none;
-  background: #22d3ee;
-}
-.lamp-dot.lamp-static.lamp-exhc {
-  animation: none;
-  background: #facc15;
-}
-.lamp-dot.lamp-static.lamp-nc {
-  background: #3b82f6;
-}
+.lamp-dot.lamp-static.lamp-f    { background: #b85666; }
+.lamp-dot.lamp-static.lamp-ac   { background: #9c7dc8; }
+.lamp-dot.lamp-static.lamp-ec   { background: #46b478; }
+.lamp-dot.lamp-static.lamp-nc   { background: #4b89e8; }
+.lamp-dot.lamp-static.lamp-hc   { background: #f1f5f9; }
+.lamp-dot.lamp-static.lamp-exhc { animation: none; background: #e8c344; }
+.lamp-dot.lamp-static.lamp-fc   { animation: none; background: #2cc6d8; }
+:root.light .lamp-dot.lamp-static.lamp-f  { background: #cf5c6e; }
+:root.light .lamp-dot.lamp-static.lamp-hc { background: #ffffff; }
 :root.light .lamp-dot.lamp-static.lamp-fc,
+:root.light .lamp-dot.lamp-static.lamp-hc,
 :root.light .lamp-dot.lamp-static.lamp-exhc {
-  border: 1px solid rgba(15, 23, 42, 0.22);
+  border: 1px solid rgba(15, 23, 42, 0.24);
 }
 
 .lamp-badge {
@@ -943,24 +942,27 @@ a:hover { text-decoration: underline; }
   border: none;
 }
 
-/* Level Clear Distribution Bars: clean high-contrast solid colors (no flashing) */
+/* Level Clear Distribution Bars: calm, eye-friendly distinct solid palette (FC cyan, EXHC yellow, HC white) */
 .lamp-bar-seg {
   height: 100%;
-  transition: filter 0.08s ease;
+  transition: filter 0.1s ease;
 }
 .lamp-bar-seg:hover {
-  filter: brightness(1.16);
+  filter: brightness(1.14);
 }
-.lamp-bar-seg.lamp-f    { background-color: #ef4444; }
-.lamp-bar-seg.lamp-ac   { background-color: #c084fc; }
-.lamp-bar-seg.lamp-ec   { background-color: #4ade80; }
-.lamp-bar-seg.lamp-nc   { background-color: #3b82f6; }
-.lamp-bar-seg.lamp-hc   { background-color: #ffffff; }
-.lamp-bar-seg.lamp-exhc { background-color: #facc15; }
-.lamp-bar-seg.lamp-fc   { background-color: #22d3ee; }
+.lamp-bar-seg.lamp-f    { background-color: #b85666; }
+.lamp-bar-seg.lamp-ac   { background-color: #9c7dc8; }
+.lamp-bar-seg.lamp-ec   { background-color: #46b478; }
+.lamp-bar-seg.lamp-nc   { background-color: #4b89e8; }
+.lamp-bar-seg.lamp-hc   { background-color: #f1f5f9; }
+.lamp-bar-seg.lamp-exhc { background-color: #e8c344; }
+.lamp-bar-seg.lamp-fc   { background-color: #2cc6d8; }
 :root.light .lamp-bar-track {
-  background: #cbd5e1;
+  background: #d9e2ee;
   border: 1px solid var(--border-strong);
+}
+:root.light .lamp-bar-seg.lamp-f {
+  background-color: #cf5c6e;
 }
 :root.light .lamp-bar-seg.lamp-hc {
   background-color: #ffffff;
@@ -1148,7 +1150,7 @@ a:hover { text-decoration: underline; }
 }
 .player-ins-card {
   background: var(--coach-soft);
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  border: 1px solid rgba(245, 158, 11, 0.32);
   border-radius: 10px;
   padding: 10px 12px;
   display: flex;
@@ -1157,15 +1159,160 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
 }
 
+/* Option Relief Explainers (SP/DP Option Views & Chart Inspector) */
+.opt-explain-banner {
+  padding: 11px 15px;
+  font-size: 12.5px;
+}
+.opt-explain-banner > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--ink-2);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  user-select: none;
+}
+.opt-explain-banner > summary::-webkit-details-marker { display: none; }
+.opt-explain-banner > summary::before {
+  content: "▸";
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform 0.14s ease;
+}
+.opt-explain-banner[open] > summary::before {
+  transform: rotate(90deg);
+}
+.opt-explain-banner > summary:hover {
+  color: var(--ink);
+}
+.opt-explain-body {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.65;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.opt-explain-body p { margin: 0; }
+.opt-explain-body ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.opt-explain-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--ink);
+}
+
+.opt-explain-details {
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.opt-explain-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+  list-style: none;
+  user-select: none;
+}
+.opt-explain-details > summary::-webkit-details-marker { display: none; }
+.opt-explain-details > summary:hover { color: var(--ink-2); }
+.opt-explain-details p {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
+/* SP Grip / Fingering Recommendation Card & Pills */
+.grip-ins-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+}
+.grip-ins-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.grip-inline-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ins-grip-select {
+  padding: 2px 7px;
+  font-size: 11.5px;
+  min-height: 0;
+  border-radius: 6px;
+}
+
+.grip-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.grip-pill-switch {
+  background: var(--coach-soft);
+  color: var(--coach-ink);
+  border-color: rgba(245, 158, 11, 0.28);
+}
+.grip-pill-ok {
+  background: var(--pos-soft);
+  color: var(--pos);
+  border-color: rgba(34, 197, 94, 0.26);
+}
+.grip-pill-alt {
+  background: var(--surface);
+  color: var(--ink-2);
+  border-color: var(--border);
+  font-weight: 600;
+}
+.grip-pill-opt {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-color: rgba(59, 130, 246, 0.24);
+}
+.grip-pill-mini {
+  background: var(--coach-soft);
+  color: var(--coach-ink);
+  border-color: rgba(245, 158, 11, 0.25);
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
 /* ==================== CSV Diagnosis & Coach Workspace ==================== */
 .csv-shell {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .dropzone-card {
-  padding: 36px 24px;
+  padding: 40px 24px;
   text-align: center;
   border: 2px dashed var(--border-strong);
   transition: border-color 0.16s ease, background 0.16s ease;
@@ -1199,32 +1346,310 @@ a:hover { text-decoration: underline; }
   color: var(--muted);
 }
 
-.csv-banner {
-  padding: 14px 18px;
+/* 1. Slim CSV Utility Toolbar */
+.csv-toolbar {
+  padding: 9px 14px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px 14px;
+}
+.csv-toolbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.csv-file-name {
+  font-weight: 700;
+  color: var(--ink);
+  max-width: 280px;
+}
+.csv-meta-sep {
+  opacity: 0.45;
+}
+.csv-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.csv-style-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.csv-style-select-wrap .select-input {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.btn-ghost-danger {
+  color: var(--muted);
+}
+.btn-ghost-danger:hover {
+  color: var(--neg);
+  border-color: rgba(244, 63, 94, 0.4);
+  background: var(--neg-soft);
 }
 
-.csv-kpi-grid {
+/* 2. Focused Executive Hero (Clear Primary Focal Anchor + Quiet Right Snapshot) */
+.csv-hero {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1.38fr) minmax(320px, 1fr);
+  gap: 0;
+  overflow: hidden;
 }
-.csv-kpi-card {
-  padding: 14px 16px;
+.csv-hero-main {
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.csv-hero-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+.csv-hero-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 12px;
+}
+.csv-hero-cp {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+.csv-hero-rank {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.csv-hero-summary {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.58;
+}
+.csv-hero-summary p { margin: 0; }
+
+.csv-gauge-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 2px;
+}
+.csv-gauge-cell {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.csv-gauge-cell.is-primary {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.csv-gauge-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+.csv-gauge-lbl::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.csv-gauge-lbl.g-ec::before { background: #46b478; }
+.csv-gauge-lbl.g-nc::before { background: #4b89e8; }
+.csv-gauge-lbl.g-hc::before { background: #f1f5f9; border: 1px solid rgba(148, 163, 184, 0.5); }
+.csv-gauge-lbl.g-ex::before { background: #e8c344; }
+:root.light .csv-gauge-lbl.g-hc::before { background: #ffffff; border: 1px solid rgba(15, 23, 42, 0.35); }
+.csv-gauge-val {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.csv-gauge-sub {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.csv-slip-note {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  padding-top: 2px;
+}
+
+.csv-hero-side {
+  padding: 20px 22px;
+  border-left: 1px solid var(--border);
+  background: rgba(127, 146, 174, 0.03);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+.csv-snap-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+.csv-snap-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.csv-mini-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.csv-snap-val {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.3;
+  word-break: break-word;
+}
+.csv-mini-val {
+  font-size: 18px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.csv-mini-sub {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.link-btn:hover { text-decoration: underline; }
+
+.csv-hero-lamps {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.csv-hero-lamps-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.csv-hero-lamp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.csv-hero-cta {
+  width: 100%;
+  justify-content: center;
+  padding: 9px 14px;
+  font-size: 12.5px;
+}
+
+/* 3. Calm 4-Tab Section Bar */
+.csv-nav-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.csv-nav-tab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+.csv-nav-tab:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.csv-nav-tab.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* 4. Active Section Body */
+.csv-sec-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.csv-sec-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+.csv-sec-sub {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .diagnosis-box {
-  padding: 16px 18px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .diagnosis-list {
   margin: 0;
@@ -1248,27 +1673,212 @@ a:hover { text-decoration: underline; }
   gap: 14px;
   align-items: start;
 }
+.csv-core-kj-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.csv-axis-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.axis-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.ex-lbl {
+  font-weight: 700;
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.ex-pos { background: var(--pos-soft); color: var(--pos); }
+.ex-neg { background: var(--neg-soft); color: var(--neg); }
+
+.csv-more-details {
+  padding: 13px 18px;
+}
+.csv-more-details > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-2);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  user-select: none;
+}
+.csv-more-details > summary::-webkit-details-marker { display: none; }
+.csv-more-details > summary::before {
+  content: "▸";
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform 0.14s ease;
+}
+.csv-more-details[open] > summary::before { transform: rotate(90deg); }
+.csv-more-details > summary:hover { color: var(--ink); }
+
+/* Grip Coach Tab */
+.csv-grip-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.grip-style-picker {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.grip-style-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 6px 11px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.grip-style-btn:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.grip-style-btn.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+.csv-grip-insights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.grip-insight-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.grip-insight-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.grip-insight-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.grip-insight-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+.csv-opt-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.csv-opt-guide-grid .inset-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.csv-opt-guide-grid .inset-box b {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.csv-opt-guide-grid .inset-box p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
 
 /* Stacked Level Lamp Progress Bars */
+.csv-lamp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.csv-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.csv-lamp-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.csv-other-lvs {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.csv-other-lvs > summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  user-select: none;
+}
 .level-progress-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 18px;
+  gap: 10px 20px;
 }
 .lv-prog-row {
   display: grid;
-  grid-template-columns: 44px 1fr minmax(96px, auto);
+  grid-template-columns: 44px 1fr minmax(92px, auto);
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   font-size: 12px;
 }
+.lv-prog-row.is-compact {
+  grid-template-columns: 38px 1fr minmax(72px, auto);
+  gap: 7px;
+  font-size: 11.5px;
+}
+.lv-prog-row.is-compact .jump-lv-btn {
+  padding: 2px 5px;
+  font-size: 11px;
+}
+.lv-prog-stat {
+  text-align: right;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .lamp-bar-track {
-  height: 12px;
-  border-radius: 6px;
+  height: 10px;
+  border-radius: 5px;
   background: var(--surface-2);
   overflow: hidden;
   display: flex;
   cursor: pointer;
+}
+.lamp-bar-track.is-compact {
+  height: 8px;
+  border-radius: 4px;
 }
 .lamp-bar-track:hover {
   outline: 1px solid var(--border-strong);
@@ -2022,8 +2632,10 @@ body.modal-open {
   .workspace-grid { grid-template-columns: minmax(0, 1fr); }
   /* On single-column tablet/mobile, charts open in instant Bottom Sheet / Modal instead of far below */
   .inspector-panel { display: none !important; }
-  .csv-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .csv-hero { grid-template-columns: minmax(0, 1fr); }
+  .csv-hero-side { border-left: none; border-top: 1px solid var(--border); }
   .csv-two-col, .csv-equal-col { grid-template-columns: minmax(0, 1fr); }
+  .csv-opt-guide-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ladder-stages { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -2037,7 +2649,7 @@ body.modal-open {
     overflow-x: clip;
   }
   .card { border-radius: 12px; }
-  .diagnosis-box, .coach-section, .ladder-card, .axis-card, .rank-card { min-width: 0; }
+  .diagnosis-box, .coach-section, .ladder-card, .axis-card, .rank-card, .csv-hero { min-width: 0; }
 
   /* Compact 2-row Top Nav on Mobile */
   .top-nav {
@@ -2257,12 +2869,41 @@ body.modal-open {
   .cp-slider-body { grid-template-columns: 58px minmax(0, 1fr) 58px; gap: 8px; }
   .dual-range-input { touch-action: none; }
 
-  /* CSV Workspace zero-overflow single-column grids */
+  /* CSV Workspace zero-overflow single-column mobile rhythm */
+  .csv-shell { gap: 11px; }
+  .csv-toolbar { padding: 9px 11px; gap: 8px; }
+  .csv-toolbar-meta { width: 100%; flex-wrap: wrap; gap: 3px 6px; font-size: 11.5px; }
+  .csv-file-name { max-width: 100%; }
+  .csv-toolbar-actions { width: 100%; gap: 6px; }
+  .csv-style-select-wrap .select-input { padding: 3px 6px; font-size: 13px; max-width: 116px; }
+  .ins-grip-select { font-size: 13px; padding: 3px 6px; }
+  .csv-hero-main { padding: 15px 14px; gap: 10px; }
+  .csv-hero-cp { font-size: 28px; }
+  .csv-hero-rank { font-size: 12px; padding: 3px 9px; }
+  .csv-hero-side { padding: 14px; gap: 12px; }
+  .csv-gauge-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .csv-gauge-cell { padding: 8px 9px; }
+  .csv-gauge-val { font-size: 16px; }
+  .csv-nav-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 4px;
+    gap: 4px;
+  }
+  .csv-nav-tab {
+    padding: 6px 3px;
+    font-size: 11.5px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .level-progress-grid { grid-template-columns: minmax(0, 1fr); }
   .rec-grid-2 { grid-template-columns: minmax(0, 1fr); }
-  .csv-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .csv-kpi-card { padding: 10px 11px; }
-  .diagnosis-box, .coach-section { padding: 12px 12px; }
+  .diagnosis-box, .coach-section { padding: 13px 13px; gap: 10px; }
+  .csv-more-details { padding: 11px 13px; }
+  .grip-style-picker { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grip-style-btn { padding: 6px 4px; font-size: 11.5px; text-align: center; }
+  .csv-opt-guide-grid { grid-template-columns: minmax(0, 1fr); }
   .coach-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;
