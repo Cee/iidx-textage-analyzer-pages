@@ -2025,6 +2025,434 @@
     };
   }
 
+  // ==================== Local Snapshot History & Diff Engine ====================
+
+  const DJ_ORDER_MAP = { AAA: 8, AA: 7, A: 6, B: 5, C: 4, D: 3, E: 2, F: 1 };
+  const LAMP_BY_RANK_NAME = {
+    0: 'NO PLAY',
+    1: 'FAILED',
+    2: 'ASSIST CLEAR',
+    3: 'EASY CLEAR',
+    4: 'CLEAR',
+    5: 'HARD CLEAR',
+    6: 'EX HARD CLEAR',
+    7: 'FULLCOMBO CLEAR',
+  };
+
+  function getDjOrderVal(dj) {
+    return DJ_ORDER_MAP[String(dj || '').toUpperCase()] || 0;
+  }
+
+  function normalizeSnapDate(s) {
+    const raw = String(s || '').trim();
+    if (!raw || raw === '—') return '';
+    return raw.replace(/\//g, '-');
+  }
+
+  function getSnapshotSortKey(snap) {
+    const d = normalizeSnapDate(snap?.latestPlayDate);
+    if (/^\d{4}-\d{2}-\d{2}/.test(d)) return `${d}|${snap?.savedAt || ''}`;
+    return `${snap?.savedAt || ''}|`;
+  }
+
+  function sortSnapshotsChrono(snapshots) {
+    return [...(snapshots || [])].sort((a, b) => getSnapshotSortKey(a).localeCompare(getSnapshotSortKey(b)));
+  }
+
+  function fnv1a64Hex(str) {
+    let h1 = 0x811c9dc5;
+    let h2 = 0x01000193;
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      h1 ^= c;
+      h1 = Math.imul(h1, 0x01000193);
+      h2 ^= (c + i) & 0xffff;
+      h2 = Math.imul(h2, 0x85ebca6b);
+    }
+    return ((h1 >>> 0).toString(16).padStart(8, '0')) + ((h2 >>> 0).toString(16).padStart(8, '0'));
+  }
+
+  function getRecordFallbackKey(chart) {
+    return `${normVerName(chart.ver || chart.v || '')}|${normCompact(chart.title || chart.t || '')}|${chart.dChar || chart.d || ''}`;
+  }
+
+  function getRecordCanonicalKey(rec) {
+    const c = rec.chart || rec;
+    if (rec.chartId) return rec.chartId;
+    if (rec.cid) return rec.cid;
+    return `u|${getRecordFallbackKey(c)}`;
+  }
+
+  function buildCsvSnapshot(report, rawText, opts = {}) {
+    const allRecs = report.allPlayedRecords || Array.from(report.recordMap?.values() || []);
+    const lampTotals = { FC: 0, EXHC: 0, HC: 0, NC: 0, EC: 0, ASSIST: 0, FAILED: 0 };
+    const compactRecs = [];
+
+    for (const r of allRecs) {
+      if (r.lampRank === 7) lampTotals.FC++;
+      else if (r.lampRank === 6) lampTotals.EXHC++;
+      else if (r.lampRank === 5) lampTotals.HC++;
+      else if (r.lampRank === 4) lampTotals.NC++;
+      else if (r.lampRank === 3) lampTotals.EC++;
+      else if (r.lampRank === 2) lampTotals.ASSIST++;
+      else if (r.lampRank === 1) lampTotals.FAILED++;
+
+      const c = r.chart;
+      const fk = getRecordFallbackKey(c);
+      const k = r.chartId || `u|${fk}`;
+      compactRecs.push({
+        k,
+        fk,
+        cid: r.chartId || null,
+        hc: r.hasChart !== false && !c.noCatalogChart ? 1 : 0,
+        t: c.title || '',
+        a: c.artist || '',
+        v: c.ver || '',
+        vc: c.verCode || '',
+        d: c.dChar || 'A',
+        lv: c.lv || r.csvLevel || 0,
+        lr: r.lampRank || 0,
+        l: r.lamp || 'NO PLAY',
+        s: r.hasScore ? (r.score || 0) : 0,
+        bp: r.hasBp && r.bp !== null && r.bp !== undefined ? r.bp : null,
+        dj: r.dj || '',
+        er: r.exRate !== null && r.exRate !== undefined ? Math.round(r.exRate * 10000) / 10000 : null,
+        lp: normalizeSnapDate(r.lastPlayed || ''),
+      });
+    }
+
+    const sigParts = compactRecs
+      .map((x) => `${x.fk}:${x.lr}:${x.s}:${x.bp === null ? '-' : x.bp}:${x.dj}`)
+      .sort();
+    const contentHash = fnv1a64Hex(`${report.mode}|${compactRecs.length}|${sigParts.join(';')}`);
+
+    const round1 = (v) => (v !== null && v !== undefined && Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
+    const savedAt = opts.savedAt || new Date().toISOString();
+    const id = opts.id || `snap_${report.mode}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    return {
+      id,
+      version: 1,
+      mode: report.mode,
+      savedAt,
+      label: String(opts.label || '').trim(),
+      filename: report.filename || 'score.csv',
+      latestPlayDate: normalizeSnapDate(report.latestPlayDate || '') || '—',
+      totalCsvSongs: report.totalCsvSongs || 0,
+      matchedSongs: report.matchedSongs || 0,
+      playedCount: compactRecs.length,
+      matchedChartCount: report.matchedChartCount ?? report.playedCount ?? compactRecs.length,
+      unmatchedChartCount: report.unmatchedChartCount ?? 0,
+      primaryLevel: report.primaryLevel || 8,
+      evalGauge: report.evalGauge || 'nc',
+      irt: {
+        ec: round1(report.irt?.ec?.theta),
+        nc: round1(report.irt?.nc?.theta),
+        hc: round1(report.irt?.hc?.theta),
+        exhc: round1(report.irt?.exhc?.theta),
+      },
+      lampTotals,
+      djCounts: { ...(report.djCounts || {}) },
+      contentHash,
+      records: compactRecs,
+      rawText: typeof rawText === 'string' ? rawText : null,
+    };
+  }
+
+  function hydrateSnapRec(x) {
+    if (!x) return null;
+    const lampName = LAMP_META[x.l] ? x.l : (LAMP_BY_RANK_NAME[x.lr] || 'NO PLAY');
+    return {
+      key: x.k,
+      fallbackKey: x.fk,
+      chartId: x.cid || null,
+      hasChart: x.hc !== 0 && !!x.cid,
+      title: x.t || '',
+      artist: x.a || '',
+      ver: x.v || '',
+      verCode: x.vc || '',
+      dChar: x.d || 'A',
+      lv: x.lv || 0,
+      lampRank: x.lr || 0,
+      lamp: lampName,
+      lampMeta: LAMP_META[lampName] || LAMP_META['NO PLAY'],
+      score: x.s || 0,
+      hasScore: (x.s || 0) > 0,
+      bp: x.bp !== undefined ? x.bp : null,
+      hasBp: x.bp !== null && x.bp !== undefined,
+      dj: x.dj || '',
+      exRate: x.er !== undefined ? x.er : null,
+      lastPlayed: x.lp || '',
+    };
+  }
+
+  function diffCsvSnapshots(oldSnap, newSnap) {
+    if (!oldSnap || !newSnap) return null;
+    const oldByK = new Map();
+    const oldByFk = new Map();
+    for (const r of (oldSnap.records || [])) {
+      oldByK.set(r.k, r);
+      if (r.fk) oldByFk.set(r.fk, r);
+    }
+
+    const changes = [];
+    const counts = { total: 0, lampUp: 0, newPlay: 0, scoreUp: 0, bpDown: 0, djUp: 0, lampDown: 0 };
+
+    for (const rawNew of (newSnap.records || [])) {
+      const rawOld = oldByK.get(rawNew.k) || (rawNew.fk ? oldByFk.get(rawNew.fk) : null) || null;
+      const newRec = hydrateSnapRec(rawNew);
+      const oldRec = hydrateSnapRec(rawOld);
+
+      if (!oldRec) {
+        counts.newPlay++;
+        counts.total++;
+        const impactScore = 35 + newRec.lampRank * 10 + (newRec.lv * 1.5);
+        changes.push({
+          key: newRec.key,
+          fallbackKey: newRec.fallbackKey,
+          chartId: newRec.chartId,
+          hasChart: newRec.hasChart,
+          title: newRec.title,
+          artist: newRec.artist,
+          ver: newRec.ver,
+          verCode: newRec.verCode,
+          dChar: newRec.dChar,
+          lv: newRec.lv,
+          isNew: true,
+          lampUp: false,
+          lampDown: false,
+          scoreUp: false,
+          scoreDelta: 0,
+          wasCarryoverScore: false,
+          bpDown: false,
+          bpDelta: null,
+          djUp: false,
+          oldRec: null,
+          newRec,
+          impactScore,
+        });
+        continue;
+      }
+
+      const lampUp = newRec.lampRank > oldRec.lampRank;
+      const lampDown = newRec.lampRank < oldRec.lampRank;
+      const scoreChanged = newRec.score !== oldRec.score;
+      const wasCarryoverScore = !oldRec.hasScore && newRec.hasScore;
+      const scoreUp = newRec.hasScore && newRec.score > oldRec.score;
+      const scoreDelta = (oldRec.hasScore && newRec.hasScore) ? (newRec.score - oldRec.score) : (wasCarryoverScore ? newRec.score : 0);
+      const bpChanged = oldRec.bp !== newRec.bp;
+      const bpDown = oldRec.hasBp && newRec.hasBp && newRec.bp < oldRec.bp;
+      const bpDelta = (oldRec.hasBp && newRec.hasBp) ? (newRec.bp - oldRec.bp) : null;
+      const oldDjV = getDjOrderVal(oldRec.dj);
+      const newDjV = getDjOrderVal(newRec.dj);
+      const djUp = oldDjV > 0 && newDjV > oldDjV;
+      const djChanged = oldRec.dj !== newRec.dj;
+
+      if (!lampUp && !lampDown && !scoreChanged && !bpChanged && !djChanged) continue;
+
+      counts.total++;
+      if (lampUp) counts.lampUp++;
+      if (lampDown) counts.lampDown++;
+      if (scoreUp) counts.scoreUp++;
+      if (bpDown) counts.bpDown++;
+      if (djUp) counts.djUp++;
+
+      let impactScore = newRec.lv * 1.2;
+      if (lampUp) impactScore += 120 + (newRec.lampRank - oldRec.lampRank) * 28 + newRec.lampRank * 10;
+      if (djUp) impactScore += 55 + newDjV * 6;
+      if (scoreUp && !wasCarryoverScore) impactScore += Math.min(45, scoreDelta * 0.18);
+      if (bpDown && bpDelta !== null) impactScore += Math.min(35, Math.abs(bpDelta) * 1.4);
+      if (lampDown) impactScore -= 20;
+
+      changes.push({
+        key: newRec.key,
+        fallbackKey: newRec.fallbackKey,
+        chartId: newRec.chartId || oldRec.chartId,
+        hasChart: newRec.hasChart || oldRec.hasChart,
+        title: newRec.title || oldRec.title,
+        artist: newRec.artist || oldRec.artist,
+        ver: newRec.ver || oldRec.ver,
+        verCode: newRec.verCode || oldRec.verCode,
+        dChar: newRec.dChar,
+        lv: newRec.lv || oldRec.lv,
+        isNew: false,
+        lampUp,
+        lampDown,
+        scoreUp,
+        scoreDelta,
+        wasCarryoverScore,
+        bpDown,
+        bpDelta,
+        djUp,
+        oldRec,
+        newRec,
+        impactScore,
+      });
+    }
+
+    changes.sort((a, b) => b.impactScore - a.impactScore || b.lv - a.lv);
+
+    const mkDelta = (a, b) => {
+      const va = (a !== null && a !== undefined && Number.isFinite(a)) ? a : null;
+      const vb = (b !== null && b !== undefined && Number.isFinite(b)) ? b : null;
+      return {
+        before: va,
+        after: vb,
+        delta: (va !== null && vb !== null) ? Math.round((vb - va) * 10) / 10 : null,
+      };
+    };
+
+    const ltOld = oldSnap.lampTotals || {};
+    const ltNew = newSnap.lampTotals || {};
+    const nOr0 = (obj, k) => Number(obj?.[k] || 0);
+    const oldHcPlus = nOr0(ltOld, 'HC') + nOr0(ltOld, 'EXHC') + nOr0(ltOld, 'FC');
+    const newHcPlus = nOr0(ltNew, 'HC') + nOr0(ltNew, 'EXHC') + nOr0(ltNew, 'FC');
+    const oldNcPlus = oldHcPlus + nOr0(ltOld, 'NC');
+    const newNcPlus = newHcPlus + nOr0(ltNew, 'NC');
+    const oldEcPlus = oldNcPlus + nOr0(ltOld, 'EC');
+    const newEcPlus = newNcPlus + nOr0(ltNew, 'EC');
+
+    const djOld = oldSnap.djCounts || {};
+    const djNew = newSnap.djCounts || {};
+
+    return {
+      oldSnap,
+      newSnap,
+      kpi: {
+        playedBefore: oldSnap.playedCount || 0,
+        playedAfter: newSnap.playedCount || 0,
+        playedDelta: (newSnap.playedCount || 0) - (oldSnap.playedCount || 0),
+        cpDeltas: {
+          ec: mkDelta(oldSnap.irt?.ec, newSnap.irt?.ec),
+          nc: mkDelta(oldSnap.irt?.nc, newSnap.irt?.nc),
+          hc: mkDelta(oldSnap.irt?.hc, newSnap.irt?.hc),
+          exhc: mkDelta(oldSnap.irt?.exhc, newSnap.irt?.exhc),
+        },
+        lampDeltas: {
+          FC: nOr0(ltNew, 'FC') - nOr0(ltOld, 'FC'),
+          EXHC: nOr0(ltNew, 'EXHC') - nOr0(ltOld, 'EXHC'),
+          HC_PLUS: newHcPlus - oldHcPlus,
+          NC_PLUS: newNcPlus - oldNcPlus,
+          EC_PLUS: newEcPlus - oldEcPlus,
+        },
+        djDeltas: {
+          AAA: nOr0(djNew, 'AAA') - nOr0(djOld, 'AAA'),
+          AA_PLUS: (nOr0(djNew, 'AAA') + nOr0(djNew, 'AA')) - (nOr0(djOld, 'AAA') + nOr0(djOld, 'AA')),
+        },
+      },
+      counts,
+      changes,
+    };
+  }
+
+  function buildSongTimeline(snapshots, chartKey, fallbackKey) {
+    const ordered = sortSnapshotsChrono(snapshots);
+    const points = [];
+    let prev = null;
+    for (const snap of ordered) {
+      let hit = null;
+      for (const r of (snap.records || [])) {
+        if ((chartKey && r.k === chartKey) || (chartKey && r.cid && r.cid === chartKey) || (fallbackKey && r.fk === fallbackKey)) {
+          hit = r;
+          break;
+        }
+      }
+      if (!hit) continue;
+      const rec = hydrateSnapRec(hit);
+      const changed = !prev || (
+        rec.lampRank !== prev.lampRank ||
+        rec.score !== prev.score ||
+        rec.bp !== prev.bp ||
+        rec.dj !== prev.dj
+      );
+      const scoreDelta = (prev && prev.hasScore && rec.hasScore) ? (rec.score - prev.score) : null;
+      const bpDelta = (prev && prev.hasBp && rec.hasBp) ? (rec.bp - prev.bp) : null;
+      const lampUp = prev ? rec.lampRank > prev.lampRank : false;
+      const djUp = prev ? (getDjOrderVal(prev.dj) > 0 && getDjOrderVal(rec.dj) > getDjOrderVal(prev.dj)) : false;
+      points.push({
+        snapId: snap.id,
+        snapDate: snap.latestPlayDate && snap.latestPlayDate !== '—' ? snap.latestPlayDate : snap.savedAt.slice(0, 10),
+        snapLabel: snap.label || '',
+        snapFilename: snap.filename || '',
+        rec,
+        changed,
+        isFirst: !prev,
+        lampUp,
+        djUp,
+        scoreDelta,
+        bpDelta,
+      });
+      prev = rec;
+    }
+    return points;
+  }
+
+  function listSongsAcrossSnapshots(snapshots, query = '', limit = 24) {
+    const ordered = sortSnapshotsChrono(snapshots);
+    const q = String(query || '').trim().toLowerCase();
+    const agg = new Map();
+
+    for (const snap of ordered) {
+      for (const r of (snap.records || [])) {
+        const key = r.fk || r.k;
+        let entry = agg.get(key);
+        if (!entry) {
+          entry = {
+            key: r.k,
+            fallbackKey: r.fk,
+            chartId: r.cid || null,
+            hasChart: r.hc !== 0 && !!r.cid,
+            title: r.t || '',
+            artist: r.a || '',
+            ver: r.v || '',
+            verCode: r.vc || '',
+            dChar: r.d || 'A',
+            lv: r.lv || 0,
+            appearances: 0,
+            changeCount: 0,
+            firstRec: r,
+            latestRec: r,
+            prevRec: null,
+          };
+          agg.set(key, entry);
+        }
+        entry.appearances++;
+        if (r.cid && !entry.chartId) {
+          entry.chartId = r.cid;
+          entry.key = r.k;
+          entry.hasChart = r.hc !== 0;
+        }
+        if (entry.prevRec) {
+          const p = entry.prevRec;
+          if (r.lr !== p.lr || r.s !== p.s || r.bp !== p.bp || r.dj !== p.dj) {
+            entry.changeCount++;
+          }
+        }
+        entry.prevRec = r;
+        entry.latestRec = r;
+      }
+    }
+
+    const list = [];
+    for (const item of agg.values()) {
+      if (q) {
+        const hay = `${item.title} ${item.artist} ${item.ver} ${item.verCode} ${item.dChar}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+      } else if (item.changeCount === 0) {
+        continue;
+      }
+      list.push(item);
+    }
+
+    list.sort((a, b) => (
+      b.changeCount - a.changeCount ||
+      (b.latestRec.lr - a.latestRec.lr) ||
+      (b.lv - a.lv) ||
+      String(b.latestRec.lp || '').localeCompare(String(a.latestRec.lp || ''))
+    ));
+    return list.slice(0, limit);
+  }
+
   const api = {
     DIFF_COLS,
     LAMP_META,
@@ -2041,6 +2469,15 @@
     buildRecommendations,
     normExact,
     normCompact,
+    normalizeSnapDate,
+    getSnapshotSortKey,
+    sortSnapshotsChrono,
+    getRecordCanonicalKey,
+    getRecordFallbackKey,
+    buildCsvSnapshot,
+    diffCsvSnapshots,
+    buildSongTimeline,
+    listSongsAcrossSnapshots,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

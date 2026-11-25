@@ -15,6 +15,9 @@
   const SP_STYLE_STORAGE_KEY = 'iidx_textage_sp_style_v1';
   const LEVELS_STORAGE_KEY = 'iidx_textage_levels_v1';
   const UI_PREFS_STORAGE_KEY = 'iidx_textage_ui_prefs_v1';
+  const SNAPSHOT_DB_NAME = 'iidx_textage_local_v1';
+  const SNAPSHOT_STORE_NAME = 'csv_snapshots';
+  const SNAPSHOT_FALLBACK_KEY = 'iidx_textage_csv_snapshots_fb_v1';
 
   const RADAR_CFG = {
     sp: {
@@ -135,6 +138,20 @@
     csvTableSortDir: -1,
     csvTablePage: 1,
     csvTablePageSize: 100,
+    csvSnapshots: [],
+    csvSnapshotsLoaded: false,
+    csvActiveSnapshotId: null,
+    csvHistBaseId: null,
+    csvHistTargetId: null,
+    csvHistFilter: 'all', // 'all' | 'lampUp' | 'newPlay' | 'scoreUp' | 'bpDown' | 'djUp'
+    csvHistLevel: 0, // 0 = all
+    csvHistSort: 'impact', // 'impact' | 'lv' | 'scoreDelta' | 'bpDelta' | 'title'
+    csvHistSearch: '',
+    csvHistPage: 1,
+    csvHistSongKey: null,
+    csvHistSongFk: null,
+    csvHistSongQuery: '',
+    csvHistNotice: null,
     csvError: null,
   };
 
@@ -284,6 +301,9 @@
         csvTableBpMax: state.csvTableBpMax,
         csvTableSortCol: state.csvTableSortCol,
         csvTableSortDir: state.csvTableSortDir,
+        csvHistFilter: state.csvHistFilter,
+        csvHistLevel: state.csvHistLevel,
+        csvHistSort: state.csvHistSort,
         levelsByMode: { sp: levelsPayload.sp, dp: levelsPayload.dp },
         levelMulti: levelsPayload.levelMulti,
       };
@@ -316,11 +336,13 @@
     const validViews = new Set(['board', 'table', 'delta', 'opt']);
     const validDiffs = new Set(DIFF_LET);
     const validTiers = new Set(TIER_ORDER_12);
-    const validCsvSec = new Set(['overview', 'grip', 'coach', 'lamps', 'songs']);
+    const validCsvSec = new Set(['overview', 'grip', 'coach', 'lamps', 'songs', 'history']);
     const validCoachTab = new Set(['quick', 'weak', 'core', 'outliers']);
     const validCsvSort = new Set(['lv', 'title', 'lamp', 'dj', 'score', 'exRate', 'bp', 'cp', 'lastPlayed']);
     const validCsvLamps = new Set(['FC', 'EXHC', 'HC', 'NC', 'EC', 'AC', 'FAILED']);
     const validCsvDjs = new Set(['AAA', 'AA', 'A', 'B', 'C', 'D', 'E', 'F', 'NONE']);
+    const validHistFilter = new Set(['all', 'lampUp', 'newPlay', 'scoreUp', 'bpDown', 'djUp']);
+    const validHistSort = new Set(['impact', 'lv', 'scoreDelta', 'bpDelta', 'title']);
     const hasExplicitHash = location.hash === '#sp' || location.hash === '#dp' || location.hash === '#csv';
 
     // Backward-compatible legacy level prefs fallback
@@ -411,6 +433,11 @@
       if (typeof obj.csvTableBpMax === 'string') state.csvTableBpMax = obj.csvTableBpMax;
       if (validCsvSort.has(obj.csvTableSortCol)) state.csvTableSortCol = obj.csvTableSortCol;
       if (obj.csvTableSortDir === 1 || obj.csvTableSortDir === -1) state.csvTableSortDir = obj.csvTableSortDir;
+      if (validHistFilter.has(obj.csvHistFilter)) state.csvHistFilter = obj.csvHistFilter;
+      if (Number.isInteger(obj.csvHistLevel) && obj.csvHistLevel >= 0 && obj.csvHistLevel <= 12) {
+        state.csvHistLevel = obj.csvHistLevel;
+      }
+      if (validHistSort.has(obj.csvHistSort)) state.csvHistSort = obj.csvHistSort;
       if (obj.levelsByMode) {
         applySavedLevelsObj(obj.levelsByMode, obj.levelMulti);
       } else if (typeof obj.levelMulti === 'boolean') {
@@ -2026,6 +2053,36 @@
         else if (rec.lampRank < egReqRank && gap <= 0.5) diffHint = `定数低于/紧贴你的 ${egShort} 能力线 (${gap >= 0 ? '+' : ''}${gap.toFixed(1)} CP)，极佳推灯目标！`;
         else diffHint = `相对个人 ${egShort} 能力线：${gap >= 0 ? '+' : ''}${gap.toFixed(1)} CP`;
       }
+      let histHtml = '';
+      const modeSnaps = state.csvSnapshots.filter((s) => s.mode === c.mode);
+      if (modeSnaps.length >= 2 && window.IIDXCsvAnalyzer?.buildSongTimeline) {
+        const A = window.IIDXCsvAnalyzer;
+        const fk = A.getRecordFallbackKey(c);
+        const pts = A.buildSongTimeline(modeSnaps, c.id, fk);
+        const milestones = pts.filter((p, idx) => idx === 0 || p.changed || idx === pts.length - 1);
+        if (milestones.some((p, idx) => idx > 0 && p.changed)) {
+          const shown = milestones.slice(-4);
+          histHtml = `
+            <div class="player-ins-hist">
+              <div class="player-ins-hist-head">本地快照变化（${milestones.length} 个节点）</div>
+              <div class="player-ins-hist-rows mono">
+                ${shown.map((p) => {
+                  const sDelta = p.scoreDelta > 0 ? `<span class="hist-delta-pos">+${p.scoreDelta}</span>` : '';
+                  const bDelta = p.bpDelta !== null && p.bpDelta < 0 ? `<span class="hist-delta-pos">${p.bpDelta}</span>` : '';
+                  return `
+                    <div class="player-ins-hist-row">
+                      <span class="hist-dt">${esc(p.snapDate.slice(0, 10))}</span>
+                      ${renderLampBadge(p.rec.lampMeta)}
+                      <span>${p.rec.hasScore ? `EX ${p.rec.score.toLocaleString()} ${sDelta}` : '旧代灯'}</span>
+                      <span>${p.rec.hasBp ? `BP ${p.rec.bp} ${bDelta}` : ''}</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }
+      }
       playerCard = `
         <div class="player-ins-card">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -2039,6 +2096,7 @@
             <div>游玩: <b>${rec.playCount} 次</b> · ${esc(rec.lastPlayed || '—')}</div>
           </div>
           ${diffHint ? `<div style="font-size:11.5px;color:var(--ink-2);">${esc(diffHint)}</div>` : ''}
+          ${histHtml}
         </div>
       `;
     }
@@ -2338,9 +2396,337 @@
     });
   }
 
+  // ==================== Local CSV Snapshot Store (IndexedDB + Fallback) ====================
+
+  let _snapDbPromise = null;
+  function openSnapshotDb() {
+    if (_snapDbPromise) return _snapDbPromise;
+    _snapDbPromise = new Promise((resolve, reject) => {
+      if (typeof indexedDB === 'undefined') {
+        reject(new Error('IndexedDB unavailable'));
+        return;
+      }
+      try {
+        const req = indexedDB.open(SNAPSHOT_DB_NAME, 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(SNAPSHOT_STORE_NAME)) {
+            db.createObjectStore(SNAPSHOT_STORE_NAME, { keyPath: 'id' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error('IDB open error'));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    return _snapDbPromise;
+  }
+
+  function readFallbackSnapshots() {
+    try {
+      const raw = localStorage.getItem(SNAPSHOT_FALLBACK_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function writeFallbackSnapshots(list) {
+    try {
+      const trimmed = list.slice(-8).map((s, idx, arr) => (
+        idx < arr.length - 2 ? { ...s, rawText: null } : s
+      ));
+      localStorage.setItem(SNAPSHOT_FALLBACK_KEY, JSON.stringify(trimmed));
+    } catch (_) {}
+  }
+
+  const SnapshotStore = {
+    async loadAll() {
+      const A = window.IIDXCsvAnalyzer;
+      try {
+        const db = await openSnapshotDb();
+        const rows = await new Promise((resolve, reject) => {
+          const tx = db.transaction(SNAPSHOT_STORE_NAME, 'readonly');
+          const req = tx.objectStore(SNAPSHOT_STORE_NAME).getAll();
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => reject(req.error);
+        });
+        return A?.sortSnapshotsChrono ? A.sortSnapshotsChrono(rows) : rows;
+      } catch (_) {
+        const fb = readFallbackSnapshots();
+        return A?.sortSnapshotsChrono ? A.sortSnapshotsChrono(fb) : fb;
+      }
+    },
+    async put(snap) {
+      try {
+        const db = await openSnapshotDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(SNAPSHOT_STORE_NAME, 'readwrite');
+          tx.objectStore(SNAPSHOT_STORE_NAME).put(snap);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (_) {
+        const fb = readFallbackSnapshots().filter((x) => x.id !== snap.id);
+        fb.push(snap);
+        writeFallbackSnapshots(fb);
+      }
+    },
+    async remove(id) {
+      try {
+        const db = await openSnapshotDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(SNAPSHOT_STORE_NAME, 'readwrite');
+          tx.objectStore(SNAPSHOT_STORE_NAME).delete(id);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (_) {
+        const fb = readFallbackSnapshots().filter((x) => x.id !== id);
+        writeFallbackSnapshots(fb);
+      }
+    },
+  };
+
+  function getModeSnapshots(mode) {
+    const m = mode || state.csvMode || 'sp';
+    const A = window.IIDXCsvAnalyzer;
+    const list = state.csvSnapshots.filter((s) => s.mode === m);
+    return A?.sortSnapshotsChrono ? A.sortSnapshotsChrono(list) : list;
+  }
+
+  function ensureHistoryPairSelection(mode, preferLatest = false) {
+    const modeSnaps = getModeSnapshots(mode);
+    if (modeSnaps.length < 2) {
+      state.csvHistBaseId = null;
+      state.csvHistTargetId = modeSnaps[0]?.id || null;
+      return;
+    }
+    const idSet = new Set(modeSnaps.map((s) => s.id));
+    if (preferLatest || !idSet.has(state.csvHistTargetId) || !idSet.has(state.csvHistBaseId) || state.csvHistBaseId === state.csvHistTargetId) {
+      state.csvHistBaseId = modeSnaps[modeSnaps.length - 2].id;
+      state.csvHistTargetId = modeSnaps[modeSnaps.length - 1].id;
+    }
+  }
+
+  async function saveSnapshotWithDedup(snap) {
+    const A = window.IIDXCsvAnalyzer;
+    const existing = state.csvSnapshots.find((s) => s.mode === snap.mode && s.contentHash === snap.contentHash);
+    if (existing) {
+      if (!existing.rawText && snap.rawText) {
+        existing.rawText = snap.rawText;
+        await SnapshotStore.put(existing);
+      }
+      return { status: 'duplicate', snapshot: existing };
+    }
+    await SnapshotStore.put(snap);
+    state.csvSnapshots = A.sortSnapshotsChrono([...state.csvSnapshots, snap]);
+    return { status: 'saved', snapshot: snap };
+  }
+
+  async function autoArchiveCurrentReport(report, rawText, silent = false) {
+    if (!report || !window.IIDXCsvAnalyzer?.buildCsvSnapshot) return null;
+    try {
+      const snap = window.IIDXCsvAnalyzer.buildCsvSnapshot(report, rawText);
+      const res = await saveSnapshotWithDedup(snap);
+      state.csvActiveSnapshotId = res.snapshot.id;
+      ensureHistoryPairSelection(report.mode, res.status === 'saved');
+      if (!silent) {
+        const modeCnt = getModeSnapshots(report.mode).length;
+        state.csvHistNotice = res.status === 'saved'
+          ? `已自动备份到本地快照库（${report.mode.toUpperCase()} 共 ${modeCnt} 份）`
+          : `本机快照库中已存在完全相同的成绩记录（跳过重复存档）`;
+      }
+      if (state.tab === 'csv' && state.csvReport) {
+        renderCsvWorkspace();
+      }
+      return res;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function loadSnapshotsOnBoot() {
+    const loaded = await SnapshotStore.loadAll();
+    state.csvSnapshots = loaded;
+    state.csvSnapshotsLoaded = true;
+    if (state.csvReport && state.csvRawText) {
+      await autoArchiveCurrentReport(state.csvReport, state.csvRawText, true);
+    } else if (loaded.length > 0) {
+      ensureHistoryPairSelection(state.csvMode, true);
+      if (state.tab === 'csv') renderCsvWorkspace();
+    }
+  }
+
+  function loadSnapshotIntoWorkspace(snap) {
+    if (!snap) return;
+    if (!snap.rawText) {
+      state.csvHistNotice = '该快照仅含统计摘要（无原始 CSV 文本），无法切换主报告，但可直接用于下方历史对比与单曲轨迹查询。';
+      renderCsvWorkspace();
+      return;
+    }
+    state.csvHistNotice = `已载入历史快照：${snap.latestPlayDate || snap.savedAt.slice(0, 10)}${snap.label ? `（${snap.label}）` : ''}`;
+    handleCsvText(snap.rawText, snap.filename, snap.mode, {
+      skipSaveSnapshot: true,
+      activeSnapshotId: snap.id,
+      preserveSection: true,
+    });
+  }
+
+  async function deleteLocalSnapshot(id) {
+    const target = state.csvSnapshots.find((s) => s.id === id);
+    if (!target) return;
+    await SnapshotStore.remove(id);
+    state.csvSnapshots = state.csvSnapshots.filter((s) => s.id !== id);
+    if (state.csvActiveSnapshotId === id) state.csvActiveSnapshotId = null;
+    ensureHistoryPairSelection(target.mode, true);
+    state.csvHistNotice = `已删除本地快照（${target.latestPlayDate || target.filename}）`;
+    renderCsvWorkspace();
+  }
+
+  async function updateLocalSnapshotLabel(id, nextLabel) {
+    const target = state.csvSnapshots.find((s) => s.id === id);
+    if (!target) return;
+    target.label = String(nextLabel || '').trim().slice(0, 32);
+    await SnapshotStore.put(target);
+    renderCsvWorkspace();
+  }
+
+  function readFileAsTextAsync(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          resolve(window.IIDXCsvAnalyzer.decodeCsvBuffer(reader.result));
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('文件读取失败'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  async function batchImportCsvFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const A = window.IIDXCsvAnalyzer;
+    let added = 0;
+    let dup = 0;
+    let failed = 0;
+    let newestSnap = null;
+    const currentMode = state.csvReport?.mode || null;
+
+    for (const f of files) {
+      try {
+        const txt = await readFileAsTextAsync(f);
+        const parsed = A.parseKonamiCsv(txt, f.name);
+        const mode = A.detectBestMode(parsed, DATASETS);
+        const matched = A.matchCsvToCatalog(parsed, DATASETS[mode], mode);
+        const rep = A.analyzePlayerPerformance(matched, DATASETS[mode], RADAR_CFG[mode], {
+          spStyle: state.spStyle,
+          spSide: state.spSide,
+        });
+        const snap = A.buildCsvSnapshot(rep, txt);
+        const res = await saveSnapshotWithDedup(snap);
+        if (res.status === 'saved') added++;
+        else dup++;
+        if (!newestSnap || A.getSnapshotSortKey(res.snapshot) > A.getSnapshotSortKey(newestSnap)) {
+          if (!currentMode || res.snapshot.mode === currentMode) newestSnap = res.snapshot;
+        }
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    const activeMode = currentMode || newestSnap?.mode || state.csvMode || 'sp';
+    ensureHistoryPairSelection(activeMode, true);
+    const parts = [];
+    if (added) parts.push(`新增 ${added} 份快照`);
+    if (dup) parts.push(`跳过 ${dup} 份重复`);
+    if (failed) parts.push(`${failed} 份解析失败`);
+    state.csvHistNotice = `批量导入完成：${parts.join('，') || '无新增'}`;
+
+    if (!state.csvReport && newestSnap?.rawText) {
+      handleCsvText(newestSnap.rawText, newestSnap.filename, newestSnap.mode, {
+        skipSaveSnapshot: true,
+        activeSnapshotId: newestSnap.id,
+        preserveSection: true,
+      });
+      return;
+    }
+    state.csvSectionTab = 'history';
+    renderCsvWorkspace();
+  }
+
+  function exportLocalSnapshotsJson() {
+    if (!state.csvSnapshots.length) {
+      state.csvHistNotice = '当前没有可导出的本地快照。';
+      renderCsvWorkspace();
+      return;
+    }
+    const payload = {
+      schema: 'iidx-textage-snapshots-v1',
+      exportedAt: new Date().toISOString(),
+      count: state.csvSnapshots.length,
+      snapshots: state.csvSnapshots,
+    };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    a.href = url;
+    a.download = `iidx-csv-snapshots-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    state.csvHistNotice = `已导出 ${state.csvSnapshots.length} 份本地快照备份 JSON 文件。`;
+    renderCsvWorkspace();
+  }
+
+  async function importLocalSnapshotsJson(text) {
+    try {
+      const parsed = JSON.parse(text);
+      const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.snapshots) ? parsed.snapshots : null);
+      if (!arr) throw new Error('JSON 格式不正确（缺少 snapshots 数组）。');
+      let added = 0;
+      let dup = 0;
+      for (const s of arr) {
+        if (!s || (s.mode !== 'sp' && s.mode !== 'dp') || !Array.isArray(s.records) || !s.contentHash) continue;
+        const cleanSnap = {
+          ...s,
+          id: s.id || `snap_${s.mode}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        };
+        const res = await saveSnapshotWithDedup(cleanSnap);
+        if (res.status === 'saved') added++;
+        else dup++;
+      }
+      ensureHistoryPairSelection(state.csvMode, true);
+      state.csvHistNotice = `本地备份恢复完成：新增 ${added} 份快照${dup ? `，跳过 ${dup} 份重复` : ''}。`;
+      if (!state.csvReport) {
+        const latestWithRaw = [...state.csvSnapshots].reverse().find((s) => s.rawText);
+        if (latestWithRaw) {
+          handleCsvText(latestWithRaw.rawText, latestWithRaw.filename, latestWithRaw.mode, {
+            skipSaveSnapshot: true,
+            activeSnapshotId: latestWithRaw.id,
+            preserveSection: true,
+          });
+          return;
+        }
+      }
+      renderCsvWorkspace();
+    } catch (err) {
+      state.csvHistNotice = `备份文件导入失败：${err.message || err}`;
+      renderCsvWorkspace();
+    }
+  }
+
   // ==================== CSV Import & Coaching Workspace ====================
 
-  function handleCsvText(text, filename, forcedMode) {
+  function handleCsvText(text, filename, forcedMode, opts = {}) {
     try {
       const A = window.IIDXCsvAnalyzer;
       const parsed = A.parseKonamiCsv(text, filename);
@@ -2352,6 +2738,7 @@
       state.csvTargetGaugeManual = false;
       state.csvTargetLevel = 0;
       state.csvError = null;
+      if (opts.activeSnapshotId) state.csvActiveSnapshotId = opts.activeSnapshotId;
       recomputeCsvReport();
 
       if (state.csvReport) {
@@ -2366,6 +2753,10 @@
       try {
         localStorage.setItem(CSV_STORAGE_KEY, JSON.stringify({ text, filename, mode }));
       } catch (_) {}
+
+      if (state.csvReport && !opts.skipSaveSnapshot) {
+        autoArchiveCurrentReport(state.csvReport, text, false);
+      }
     } catch (err) {
       state.csvError = err.message || String(err);
       state.csvReport = null;
@@ -2904,29 +3295,522 @@
     });
   }
 
+  function formatSnapShortLabel(snap) {
+    if (!snap) return '—';
+    const dt = (snap.latestPlayDate && snap.latestPlayDate !== '—')
+      ? snap.latestPlayDate.slice(0, 10)
+      : (snap.savedAt ? snap.savedAt.slice(0, 10) : '未知日期');
+    const tag = snap.label ? `「${snap.label}」` : '';
+    return `${dt}${tag} · ${snap.playedCount}谱`;
+  }
+
+  function renderCsvHistoryTrendSvg(modeSnaps) {
+    if (!modeSnaps || modeSnaps.length < 2) return '';
+    const seriesDef = [
+      { key: 'ec',   label: 'EC',   cls: 'hist-line-ec' },
+      { key: 'nc',   label: 'NC',   cls: 'hist-line-nc' },
+      { key: 'hc',   label: 'HC',   cls: 'hist-line-hc' },
+      { key: 'exhc', label: 'EXHC', cls: 'hist-line-exhc' },
+    ];
+    const allVals = [];
+    for (const s of modeSnaps) {
+      for (const sd of seriesDef) {
+        const v = s.irt?.[sd.key];
+        if (typeof v === 'number' && Number.isFinite(v)) allVals.push(v);
+      }
+    }
+    if (allVals.length < 2) return '';
+    const rawMin = Math.min(...allVals);
+    const rawMax = Math.max(...allVals);
+    const pad = Math.max(1.5, (rawMax - rawMin) * 0.16);
+    const yMin = Math.floor((rawMin - pad) * 2) / 2;
+    const yMax = Math.ceil((rawMax + pad) * 2) / 2;
+    const ySpan = Math.max(1, yMax - yMin);
+
+    const W = 680, H = 185;
+    const ml = 38, mr = 18, mt = 14, mb = 28;
+    const pw = W - ml - mr;
+    const ph = H - mt - mb;
+    const n = modeSnaps.length;
+    const xOf = (i) => ml + (n <= 1 ? pw / 2 : (i / (n - 1)) * pw);
+    const yOf = (v) => mt + ph - ((v - yMin) / ySpan) * ph;
+
+    let gridHtml = '';
+    for (let g = 0; g <= 3; g++) {
+      const val = yMin + (ySpan * g) / 3;
+      const y = yOf(val);
+      gridHtml += `<line x1="${ml}" y1="${y.toFixed(1)}" x2="${W - mr}" y2="${y.toFixed(1)}" class="hist-svg-grid" />`;
+      gridHtml += `<text x="${ml - 6}" y="${(y + 3.5).toFixed(1)}" text-anchor="end" class="hist-svg-tick mono">${val.toFixed(1)}</text>`;
+    }
+
+    const step = Math.max(1, Math.ceil(n / 6));
+    let xTicksHtml = '';
+    for (let i = 0; i < n; i++) {
+      if (i !== 0 && i !== n - 1 && i % step !== 0) continue;
+      const s = modeSnaps[i];
+      const dt = (s.latestPlayDate && s.latestPlayDate !== '—') ? s.latestPlayDate.slice(5, 10) : (s.savedAt ? s.savedAt.slice(5, 10) : `#${i + 1}`);
+      xTicksHtml += `<text x="${xOf(i).toFixed(1)}" y="${H - 7}" text-anchor="middle" class="hist-svg-tick mono">${esc(dt)}</text>`;
+    }
+
+    let linesHtml = '';
+    let dotsHtml = '';
+    for (const sd of seriesDef) {
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const v = modeSnaps[i].irt?.[sd.key];
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          pts.push({ i, v, x: xOf(i), y: yOf(v), snap: modeSnaps[i] });
+        }
+      }
+      if (pts.length >= 2) {
+        const dStr = pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+        linesHtml += `<path d="${dStr}" fill="none" class="hist-svg-line ${sd.cls}" />`;
+      }
+      for (const p of pts) {
+        const dt = (p.snap.latestPlayDate && p.snap.latestPlayDate !== '—') ? p.snap.latestPlayDate.slice(0, 10) : p.snap.savedAt.slice(0, 10);
+        dotsHtml += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.4" class="hist-svg-dot ${sd.cls}"><title>${esc(dt)} · ${sd.label} CP ${p.v.toFixed(1)}</title></circle>`;
+      }
+    }
+
+    return `
+      <div class="hist-trend-wrap">
+        <div class="hist-trend-head">
+          <span class="hist-sub-title">四血条有效能力线 (CP) 走势（${modeSnaps.length} 份本地快照）</span>
+          <div class="hist-legend mono">
+            <span class="hist-leg-item"><i class="hist-leg-dot hist-line-ec"></i>EC</span>
+            <span class="hist-leg-item"><i class="hist-leg-dot hist-line-nc"></i>NC</span>
+            <span class="hist-leg-item"><i class="hist-leg-dot hist-line-hc"></i>HC</span>
+            <span class="hist-leg-item"><i class="hist-leg-dot hist-line-exhc"></i>EXHC</span>
+          </div>
+        </div>
+        <svg viewBox="0 0 ${W} ${H}" class="hist-trend-svg" role="img" aria-label="四血条能力线 CP 走势图">
+          ${gridHtml}
+          ${xTicksHtml}
+          ${linesHtml}
+          ${dotsHtml}
+        </svg>
+      </div>
+    `;
+  }
+
+  function renderCsvHistoryDiffArea(diffObj, mode) {
+    const pillsEl = document.getElementById('csv-hist-pills-area');
+    const resEl = document.getElementById('csv-hist-diff-results');
+    if (!resEl || !diffObj) return;
+
+    const q = state.csvHistSearch.trim().toLowerCase();
+    const lvCounts = new Array(13).fill(0);
+    const typeCounts = { all: 0, lampUp: 0, newPlay: 0, scoreUp: 0, bpDown: 0, djUp: 0 };
+
+    const matchSearch = (ch) => {
+      if (!q) return true;
+      const hay = `${ch.title} ${ch.artist} ${ch.ver} ${ch.verCode} ${ch.dChar} ${ch.hasChart ? '' : '无谱面'}`.toLowerCase();
+      return hay.includes(q);
+    };
+    const matchType = (ch, f) => {
+      if (f === 'lampUp') return ch.lampUp;
+      if (f === 'newPlay') return ch.isNew;
+      if (f === 'scoreUp') return ch.scoreUp;
+      if (f === 'bpDown') return ch.bpDown;
+      if (f === 'djUp') return ch.djUp;
+      return true;
+    };
+
+    const filtered = [];
+    for (const ch of diffObj.changes) {
+      if (!matchSearch(ch)) continue;
+      if (state.csvHistLevel === 0 || ch.lv === state.csvHistLevel) {
+        typeCounts.all++;
+        if (ch.lampUp) typeCounts.lampUp++;
+        if (ch.isNew) typeCounts.newPlay++;
+        if (ch.scoreUp) typeCounts.scoreUp++;
+        if (ch.bpDown) typeCounts.bpDown++;
+        if (ch.djUp) typeCounts.djUp++;
+      }
+      if (matchType(ch, state.csvHistFilter)) {
+        if (ch.lv >= 1 && ch.lv <= 12) lvCounts[ch.lv]++;
+        if (state.csvHistLevel === 0 || ch.lv === state.csvHistLevel) {
+          filtered.push(ch);
+        }
+      }
+    }
+
+    if (pillsEl) {
+      const prevTypeScroll = pillsEl.querySelector('.hist-type-pills')?.scrollLeft || 0;
+      const prevLvScroll = pillsEl.querySelector('.hist-lv-bar')?.scrollLeft || 0;
+      const typeDefs = [
+        ['all',     '全部变化', 'all-tier'],
+        ['lampUp',  '推灯突破', 'lp-HC'],
+        ['newPlay', '新游玩',   'lp-NC'],
+        ['scoreUp', '刷新 EX',  'dj-AAA'],
+        ['bpDown',  'BP 减少',  'lp-EC'],
+        ['djUp',    '评价提升', 'dj-AA'],
+      ];
+      const typeHtml = typeDefs.map(([k, lbl, cls]) => `
+        <button type="button" data-hfilter="${k}" class="tier-pill ${cls} ${state.csvHistFilter === k ? 'active' : ''}">
+          <span>${lbl}</span><span class="tp-cnt mono">(${typeCounts[k]})</span>
+        </button>
+      `).join('');
+
+      let lvHtml = `<button type="button" data-hlv="0" class="lv-btn all-btn mono ${state.csvHistLevel === 0 ? 'active' : ''}">全等级</button>`;
+      for (let lv = 1; lv <= 12; lv++) {
+        if (lvCounts[lv] === 0 && state.csvHistLevel !== lv) continue;
+        lvHtml += `<button type="button" data-hlv="${lv}" class="lv-btn mono ${state.csvHistLevel === lv ? 'active' : ''}">★${lv}<span class="lv-cnt">(${lvCounts[lv]})</span></button>`;
+      }
+
+      pillsEl.innerHTML = `
+        <div class="filter-row tier-filter-row">
+          <span class="filter-label">变化</span>
+          <div class="tier-filter-pills hist-type-pills">${typeHtml}</div>
+        </div>
+        <div class="filter-row filter-row-divider level-filter-row">
+          <span class="filter-label">等级</span>
+          <div class="level-bar hist-lv-bar">${lvHtml}</div>
+        </div>
+      `;
+      const tpBar = pillsEl.querySelector('.hist-type-pills');
+      const lvBar = pillsEl.querySelector('.hist-lv-bar');
+      if (tpBar) tpBar.scrollLeft = prevTypeScroll;
+      if (lvBar) lvBar.scrollLeft = prevLvScroll;
+
+      pillsEl.querySelectorAll('[data-hfilter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.csvHistFilter = btn.dataset.hfilter;
+          state.csvHistPage = 1;
+          renderCsvHistoryDiffArea(diffObj, mode);
+          persistUiPrefs();
+        });
+      });
+      pillsEl.querySelectorAll('[data-hlv]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const lv = Number(btn.dataset.hlv) || 0;
+          state.csvHistLevel = (state.csvHistLevel === lv && lv !== 0) ? 0 : lv;
+          state.csvHistPage = 1;
+          renderCsvHistoryDiffArea(diffObj, mode);
+          persistUiPrefs();
+        });
+      });
+    }
+
+    const sortBy = state.csvHistSort;
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === 'lv') return (b.lv - a.lv) || (b.impactScore - a.impactScore);
+      if (sortBy === 'scoreDelta') return ((b.scoreUp && !b.wasCarryoverScore ? b.scoreDelta : -1e9) - (a.scoreUp && !a.wasCarryoverScore ? a.scoreDelta : -1e9)) || (b.impactScore - a.impactScore);
+      if (sortBy === 'bpDelta') return ((a.bpDown ? a.bpDelta : 1e9) - (b.bpDown ? b.bpDelta : 1e9)) || (b.impactScore - a.impactScore);
+      if (sortBy === 'title') return a.title.localeCompare(b.title);
+      return b.impactScore - a.impactScore || b.lv - a.lv;
+    });
+
+    const pageSize = 80;
+    const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+    state.csvHistPage = Math.max(1, Math.min(state.csvHistPage, totalPages));
+    const startIdx = (state.csvHistPage - 1) * pageSize;
+    const pageRows = sorted.slice(startIdx, startIdx + pageSize);
+
+    const renderDjBadge = (dj) => {
+      const k = String(dj || '').toUpperCase();
+      if (!k) return '<span style="color:var(--muted);">—</span>';
+      const cls = k === 'AAA' ? 'dj-AAA' : (k === 'AA' ? 'dj-AA' : (k === 'A' ? 'dj-A' : (k === 'B' ? 'dj-B' : 'dj-low')));
+      return `<span class="dj-pill ${cls} mono">${esc(k)}</span>`;
+    };
+
+    resEl.innerHTML = `
+      <div class="csv-songs-meta mono">
+        <span>共 <b style="color:var(--ink);">${sorted.length.toLocaleString()}</b> 谱符合条件（两份快照间共 ${diffObj.counts.total.toLocaleString()} 谱发生变化）</span>
+        <span style="color:var(--muted);">推灯 ${diffObj.counts.lampUp} · 新玩 ${diffObj.counts.newPlay} · 刷新EX ${diffObj.counts.scoreUp} · 控BP ${diffObj.counts.bpDown}</span>
+      </div>
+      ${sorted.length ? `
+        <div class="table-wrap csv-songs-table-wrap">
+          <div class="table-mobile-hint">可左右滑动查看完整对比 · 点击「轨迹」查看单曲全历史变化</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>等级</th>
+                <th>曲名 / 难度</th>
+                <th>点灯变化</th>
+                <th>评价变化</th>
+                <th>EX 变化</th>
+                <th>BP 变化</th>
+                <th>单曲历史</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pageRows.map((ch, i) => {
+                const lvStr = ch.lv > 0 ? `★${ch.lv}` : '—';
+                const lampCell = ch.isNew
+                  ? `<span class="hist-new-tag">新</span> ${renderLampBadge(ch.newRec.lampMeta)}`
+                  : (ch.lampUp || ch.lampDown)
+                    ? `${renderLampBadge(ch.oldRec.lampMeta)}<span class="hist-arr">→</span>${renderLampBadge(ch.newRec.lampMeta)}`
+                    : renderLampBadge(ch.newRec.lampMeta);
+
+                const djCell = ch.isNew
+                  ? renderDjBadge(ch.newRec.dj)
+                  : (ch.oldRec.dj !== ch.newRec.dj && (ch.oldRec.dj || ch.newRec.dj))
+                    ? `${renderDjBadge(ch.oldRec.dj)}<span class="hist-arr">→</span>${renderDjBadge(ch.newRec.dj)}`
+                    : renderDjBadge(ch.newRec.dj);
+
+                let exCell = '<span style="color:var(--muted);">—</span>';
+                if (ch.isNew) {
+                  exCell = ch.newRec.hasScore ? `<b>${ch.newRec.score.toLocaleString()}</b>` : '<span style="color:var(--muted);">旧代灯</span>';
+                } else if (ch.wasCarryoverScore) {
+                  exCell = `<span style="color:var(--muted);">旧代</span><span class="hist-arr">→</span><b>${ch.newRec.score.toLocaleString()}</b>`;
+                } else if (ch.scoreUp) {
+                  exCell = `<span style="color:var(--muted);">${ch.oldRec.score.toLocaleString()}</span><span class="hist-arr">→</span><b>${ch.newRec.score.toLocaleString()}</b> <span class="hist-delta-pos">+${ch.scoreDelta}</span>`;
+                } else if (ch.oldRec.score !== ch.newRec.score && ch.newRec.hasScore) {
+                  const diffS = ch.newRec.score - ch.oldRec.score;
+                  exCell = `<span style="color:var(--muted);">${ch.oldRec.score.toLocaleString()}</span><span class="hist-arr">→</span><b>${ch.newRec.score.toLocaleString()}</b> <span class="hist-delta-neg">${diffS}</span>`;
+                } else if (ch.newRec.hasScore) {
+                  exCell = `${ch.newRec.score.toLocaleString()}`;
+                }
+
+                let bpCell = '<span style="color:var(--muted);">—</span>';
+                if (ch.isNew) {
+                  bpCell = ch.newRec.hasBp ? `<b>${ch.newRec.bp}</b>` : '<span style="color:var(--muted);">—</span>';
+                } else if (ch.bpDown && ch.bpDelta !== null) {
+                  bpCell = `<span style="color:var(--muted);">${ch.oldRec.bp}</span><span class="hist-arr">→</span><b>${ch.newRec.bp}</b> <span class="hist-delta-pos">${ch.bpDelta}</span>`;
+                } else if (ch.oldRec.bp !== ch.newRec.bp && ch.newRec.hasBp) {
+                  if (ch.oldRec.hasBp) {
+                    const dbp = ch.newRec.bp - ch.oldRec.bp;
+                    bpCell = `<span style="color:var(--muted);">${ch.oldRec.bp}</span><span class="hist-arr">→</span><b>${ch.newRec.bp}</b> <span class="hist-delta-neg">+${dbp}</span>`;
+                  } else {
+                    bpCell = `<b>${ch.newRec.bp}</b>`;
+                  }
+                } else if (ch.newRec.hasBp) {
+                  bpCell = `${ch.newRec.bp}`;
+                }
+
+                return `
+                  <tr ${ch.hasChart && ch.chartId ? `data-cid="${esc(ch.chartId)}"` : ''} class="csv-song-row${ch.hasChart && ch.chartId ? '' : ' csv-song-row-unmatched'}">
+                    <td class="mono" style="color:var(--muted);">${startIdx + i + 1}</td>
+                    <td class="mono" style="font-weight:700;white-space:nowrap;">${lvStr}</td>
+                    <td style="max-width:240px;">
+                      <div class="truncate" style="font-weight:700;" title="${esc(ch.title)}">
+                        <span class="diff-${ch.dChar}" style="margin-right:4px;">[${ch.dChar}]</span>${esc(ch.title)}${ch.hasChart ? '' : '<span class="csv-nochart-tag">无谱面</span>'}
+                      </div>
+                      <div class="truncate" style="font-size:10.5px;color:var(--muted);">${esc(ch.verCode || ch.ver)}${ch.artist ? ` · ${esc(ch.artist)}` : ''}</div>
+                    </td>
+                    <td style="white-space:nowrap;">${lampCell}</td>
+                    <td style="white-space:nowrap;">${djCell}</td>
+                    <td class="mono" style="white-space:nowrap;">${exCell}</td>
+                    <td class="mono" style="white-space:nowrap;">${bpCell}</td>
+                    <td style="white-space:nowrap;">
+                      <button type="button" class="btn btn-sm hist-song-track-btn" data-skey="${esc(ch.key)}" data-sfk="${esc(ch.fallbackKey || '')}">轨迹</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+          ${totalPages > 1 ? `
+            <div class="pagination-bar mono">
+              <span>第 <b>${state.csvHistPage}</b> / ${totalPages} 页（显示 ${startIdx + 1}–${Math.min(sorted.length, startIdx + pageSize)} / ${sorted.length} 谱）</span>
+              <div style="display:flex;gap:6px;">
+                <button id="hist-pg-prev" type="button" class="btn btn-sm" ${state.csvHistPage <= 1 ? 'disabled' : ''}>上一页</button>
+                <button id="hist-pg-next" type="button" class="btn btn-sm" ${state.csvHistPage >= totalPages ? 'disabled' : ''}>下一页</button>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      ` : '<div style="padding:26px 14px;text-align:center;color:var(--muted);font-size:12.5px;">这两份快照在当前筛选条件下没有变化记录，可切换筛选条件或选择其他快照区间。</div>'}
+    `;
+
+    resEl.querySelectorAll('.csv-song-row').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.hist-song-track-btn') || !row.dataset.cid) return;
+        openChartModal(mode, row.dataset.cid);
+      });
+    });
+    resEl.querySelectorAll('.hist-song-track-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.csvHistSongKey = btn.dataset.skey;
+        state.csvHistSongFk = btn.dataset.sfk;
+        renderCsvSongTimelineArea(getModeSnapshots(mode), mode);
+        document.getElementById('csv-hist-song-card')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    });
+    document.getElementById('hist-pg-prev')?.addEventListener('click', () => {
+      state.csvHistPage--;
+      renderCsvHistoryDiffArea(diffObj, mode);
+    });
+    document.getElementById('hist-pg-next')?.addEventListener('click', () => {
+      state.csvHistPage++;
+      renderCsvHistoryDiffArea(diffObj, mode);
+    });
+  }
+
+  function renderCsvSongTimelineArea(modeSnaps, mode) {
+    const resEl = document.getElementById('csv-hist-song-results');
+    if (!resEl || !modeSnaps || modeSnaps.length < 2) return;
+    const A = window.IIDXCsvAnalyzer;
+
+    const candidates = A.listSongsAcrossSnapshots(modeSnaps, state.csvHistSongQuery, 12);
+    if ((!state.csvHistSongKey && !state.csvHistSongFk) && candidates.length > 0) {
+      state.csvHistSongKey = candidates[0].key;
+      state.csvHistSongFk = candidates[0].fallbackKey;
+    }
+
+    const chipsHtml = candidates.length ? `
+      <div class="hist-song-chips">
+        ${candidates.map((item) => {
+          const isSel = (state.csvHistSongKey && item.key === state.csvHistSongKey) || (state.csvHistSongFk && item.fallbackKey === state.csvHistSongFk);
+          return `
+            <button type="button" class="tier-pill hist-song-chip ${isSel ? 'active all-tier' : ''}" data-skey="${esc(item.key)}" data-sfk="${esc(item.fallbackKey)}">
+              <span class="diff-${item.dChar}">[${item.dChar}]</span>
+              <span class="truncate" style="max-width:150px;">${esc(item.title)}</span>
+              <span class="tp-cnt mono">★${item.lv}${item.changeCount ? ` · ${item.changeCount}变` : ''}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    ` : `<div style="font-size:12px;color:var(--muted);padding:4px 0;">${state.csvHistSongQuery ? '未在本地快照中找到匹配曲目。' : '当前快照间暂无同一曲目的变更轨迹，可输入曲名搜索任意已玩曲目。'}</div>`;
+
+    let timelineHtml = '';
+    if (state.csvHistSongKey || state.csvHistSongFk) {
+      const pts = A.buildSongTimeline(modeSnaps, state.csvHistSongKey, state.csvHistSongFk);
+      if (pts.length) {
+        const latest = pts[pts.length - 1].rec;
+        const canOpen = latest.hasChart && latest.chartId;
+        timelineHtml = `
+          <div class="hist-timeline-box">
+            <div class="hist-timeline-head">
+              <div>
+                <span class="diff-${latest.dChar}" style="font-weight:800;margin-right:4px;">[${latest.dChar}]</span>
+                <b>${esc(latest.title)}</b>
+                <span class="mono" style="margin-left:6px;color:var(--muted);font-size:12px;">★${latest.lv || '—'} · ${esc(latest.verCode || latest.ver)}</span>
+                ${latest.hasChart ? '' : '<span class="csv-nochart-tag">无谱面</span>'}
+              </div>
+              ${canOpen ? `<button type="button" class="btn btn-sm" id="btn-hist-open-song-modal" data-cid="${esc(latest.chartId)}">查看谱面详情 →</button>` : ''}
+            </div>
+            <div class="hist-timeline-list">
+              ${pts.map((p) => {
+                const sDelta = p.scoreDelta !== null && p.scoreDelta !== 0
+                  ? `<span class="${p.scoreDelta > 0 ? 'hist-delta-pos' : 'hist-delta-neg'}">${p.scoreDelta > 0 ? '+' : ''}${p.scoreDelta}</span>`
+                  : '';
+                const bDelta = p.bpDelta !== null && p.bpDelta !== 0
+                  ? `<span class="${p.bpDelta < 0 ? 'hist-delta-pos' : 'hist-delta-neg'}">${p.bpDelta > 0 ? '+' : ''}${p.bpDelta}</span>`
+                  : '';
+                const djCls = p.rec.dj === 'AAA' ? 'dj-AAA' : (p.rec.dj === 'AA' ? 'dj-AA' : (p.rec.dj === 'A' ? 'dj-A' : (p.rec.dj === 'B' ? 'dj-B' : 'dj-low')));
+                const djBadge = p.rec.dj ? `<span class="dj-pill ${djCls} mono">${esc(p.rec.dj)}</span>` : '<span style="color:var(--muted);">—</span>';
+                return `
+                  <div class="hist-tl-item ${p.changed && !p.isFirst ? 'is-milestone' : ''}">
+                    <div class="hist-tl-date mono">
+                      <b>${esc(p.snapDate.slice(0, 10))}</b>
+                      ${p.snapLabel ? `<span class="hist-tl-lbl">${esc(p.snapLabel)}</span>` : ''}
+                      ${p.changed && !p.isFirst ? '<span class="hist-tl-tag">刷新</span>' : (p.isFirst ? '<span class="hist-tl-tag is-init">首次存档</span>' : '<span class="hist-tl-same">无变化</span>')}
+                    </div>
+                    <div class="hist-tl-metrics mono">
+                      <span>${renderLampBadge(p.rec.lampMeta)}</span>
+                      <span>${djBadge}</span>
+                      <span>EX: <b>${p.rec.hasScore ? p.rec.score.toLocaleString() : '旧代灯'}</b> ${sDelta}</span>
+                      <span>BP: <b>${p.rec.hasBp ? p.rec.bp : '—'}</b> ${bDelta}</span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    resEl.innerHTML = `${chipsHtml}${timelineHtml}`;
+
+    resEl.querySelectorAll('.hist-song-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.csvHistSongKey = btn.dataset.skey;
+        state.csvHistSongFk = btn.dataset.sfk;
+        renderCsvSongTimelineArea(modeSnaps, mode);
+      });
+    });
+    document.getElementById('btn-hist-open-song-modal')?.addEventListener('click', (e) => {
+      openChartModal(mode, e.currentTarget.dataset.cid);
+    });
+  }
+
   function renderCsvWorkspace() {
     const root = document.getElementById('csv-workspace');
     if (!state.csvReport) {
+      const savedSnaps = [...state.csvSnapshots].reverse();
+      const savedBarHtml = savedSnaps.length ? `
+        <div class="card hist-landing-saved">
+          <div class="hist-landing-head">
+            <div>
+              <h2 class="csv-sec-title">本机已备份的历史快照（共 ${savedSnaps.length} 份）</h2>
+              <p class="csv-sec-sub">点击任意快照即可直接恢复完整诊断报告与历史对比。</p>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button type="button" id="btn-dz-export-json" class="btn btn-sm">导出本地备份</button>
+              <button type="button" id="btn-dz-import-json" class="btn btn-sm">恢复备份 JSON</button>
+            </div>
+          </div>
+          <div class="hist-landing-list">
+            ${savedSnaps.slice(0, 8).map((s) => `
+              <button type="button" class="hist-landing-item" data-snap-id="${esc(s.id)}">
+                <span class="mono" style="font-weight:800;">${s.mode.toUpperCase()}</span>
+                <span class="mono">${esc((s.latestPlayDate && s.latestPlayDate !== '—') ? s.latestPlayDate.slice(0, 10) : s.savedAt.slice(0, 10))}</span>
+                <span class="truncate" style="flex:1;text-align:left;">${esc(s.label || s.filename)}</span>
+                <span class="mono" style="color:var(--muted);">${s.playedCount} 谱</span>
+                <span style="color:var(--accent-ink);font-weight:700;">载入 →</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      ` : '';
       root.innerHTML = `
+        <input id="dz-multi-csv-input" type="file" accept=".csv,text/csv" multiple class="hidden" />
+        <input id="dz-backup-json-input" type="file" accept=".json,application/json" class="hidden" />
         <div class="card dropzone-card" id="csv-dropzone">
           <h1 class="dropzone-title">导入 Konami e-amusement 成绩 CSV · 八维诊断与手法指导</h1>
           <p class="dropzone-sub">
             拖入或选择从 e-amusement 官网导出的官方 IIDX SP / DP 成绩 CSV（如 <code>4776-4489_sp_score.csv</code>）。
-            系统将结合 Textage 全量 16,657 张谱面的四血条物理定数与八维生物力学模型，防拉低估算你的 EC / NC / HC / EXHC 能力线，定位擅长与短板，并结合你的主力手法推荐变招与上机练歌清单。
+            系统将结合 Textage 全量 16,657 张谱面的四血条物理定数与八维生物力学模型，防拉低估算你的 EC / NC / HC / EXHC 能力线，自动在本地备份历次快照并追踪推灯与涨分轨迹。
           </p>
           ${state.csvError ? `<div style="margin:0 auto 14px;max-width:560px;padding:10px 14px;border-radius:8px;background:var(--neg-soft);color:var(--neg);font-size:12.5px;font-weight:600;">${esc(state.csvError)}</div>` : ''}
+          ${state.csvHistNotice ? `<div class="hist-notice" style="max-width:560px;margin:0 auto 12px;">${esc(state.csvHistNotice)}</div>` : ''}
           <div class="dropzone-actions">
             <button type="button" id="btn-dz-pick" class="btn btn-primary">选择 Konami CSV 文件</button>
+            <button type="button" id="btn-dz-batch" class="btn">批量导入多份历史 CSV</button>
+            <button type="button" id="btn-dz-restore-json" class="btn">恢复本地备份 (.json)</button>
           </div>
           <div class="privacy-note">
-            100% 纯浏览器本地解析计算，成绩 CSV 不会上传到任何服务器 · 支持 UTF-8 / Shift-JIS 编码 · 导入后自动在 SP/DP 难度表全站叠加清灯。
+            100% 纯浏览器本地解析与 IndexedDB 快照存档，成绩不会上传到任何服务器 · 支持 UTF-8 / Shift-JIS 编码 · 支持随时导出/导入 JSON 备份。
           </div>
         </div>
+        ${savedBarHtml}
       `;
       const dz = document.getElementById('csv-dropzone');
       document.getElementById('btn-dz-pick').addEventListener('click', (e) => {
         e.stopPropagation();
         document.getElementById('global-csv-file').click();
+      });
+      document.getElementById('btn-dz-batch')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.getElementById('dz-multi-csv-input')?.click();
+      });
+      document.getElementById('btn-dz-restore-json')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.getElementById('dz-backup-json-input')?.click();
+      });
+      document.getElementById('btn-dz-import-json')?.addEventListener('click', () => {
+        document.getElementById('dz-backup-json-input')?.click();
+      });
+      document.getElementById('btn-dz-export-json')?.addEventListener('click', exportLocalSnapshotsJson);
+      document.getElementById('dz-multi-csv-input')?.addEventListener('change', (e) => {
+        if (e.target.files?.length) batchImportCsvFiles(e.target.files);
+        e.target.value = '';
+      });
+      document.getElementById('dz-backup-json-input')?.addEventListener('change', (e) => {
+        const f = e.target.files?.[0];
+        if (f) f.text().then(importLocalSnapshotsJson);
+        e.target.value = '';
+      });
+      root.querySelectorAll('.hist-landing-item').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const snap = state.csvSnapshots.find((s) => s.id === btn.dataset.snapId);
+          if (snap) loadSnapshotIntoWorkspace(snap);
+        });
       });
       dz.addEventListener('click', () => document.getElementById('global-csv-file').click());
       dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
@@ -2934,8 +3818,9 @@
       dz.addEventListener('drop', (e) => {
         e.preventDefault();
         dz.classList.remove('dragover');
-        const f = e.dataTransfer?.files?.[0];
-        if (f) loadFileObject(f);
+        const files = e.dataTransfer?.files;
+        if (files && files.length > 1) batchImportCsvFiles(files);
+        else if (files?.[0]) loadFileObject(files[0]);
       });
       return;
     }
@@ -3009,6 +3894,8 @@
 
     // Build active section tab HTML
     const activeSec = state.csvSectionTab || 'overview';
+    const modeSnaps = getModeSnapshots(rep.mode);
+    let histDiffObj = null;
     let sectionBodyHtml = '';
 
     if (activeSec === 'overview') {
@@ -3427,6 +4314,209 @@
           <div id="csv-songs-results"></div>
         </div>
       `;
+    } else if (activeSec === 'history') {
+      ensureHistoryPairSelection(rep.mode, false);
+      const baseSnap = modeSnaps.find((s) => s.id === state.csvHistBaseId) || null;
+      const targetSnap = modeSnaps.find((s) => s.id === state.csvHistTargetId) || null;
+      if (baseSnap && targetSnap && baseSnap.id !== targetSnap.id) {
+        histDiffObj = A.diffCsvSnapshots(baseSnap, targetSnap);
+      }
+
+      const fmtSigned = (v, digits = 0) => {
+        if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+        if (Math.abs(v) < 1e-9) return '0';
+        const txt = digits > 0 ? Math.abs(v).toFixed(digits) : Math.abs(v).toLocaleString();
+        return v > 0 ? `+${txt}` : `-${txt}`;
+      };
+      const deltaCls = (v) => (v > 0 ? 'hist-delta-pos' : (v < 0 ? 'hist-delta-neg' : 'hist-delta-zero'));
+
+      const snapRowsHtml = [...modeSnaps].reverse().map((s) => {
+        const dt = (s.latestPlayDate && s.latestPlayDate !== '—') ? s.latestPlayDate : s.savedAt.slice(0, 16).replace('T', ' ');
+        const isActive = s.id === state.csvActiveSnapshotId;
+        const hcPlus = (s.lampTotals?.HC || 0) + (s.lampTotals?.EXHC || 0) + (s.lampTotals?.FC || 0);
+        const aaaCnt = s.djCounts?.AAA || 0;
+        const cpStr = [
+          s.irt?.nc !== null && s.irt?.nc !== undefined ? `NC ${s.irt.nc.toFixed(1)}` : '',
+          s.irt?.hc !== null && s.irt?.hc !== undefined ? `HC ${s.irt.hc.toFixed(1)}` : '',
+        ].filter(Boolean).join(' · ') || '—';
+        return `
+          <div class="hist-snap-item ${isActive ? 'is-active' : ''}" data-snap-row="${esc(s.id)}">
+            <div class="hist-snap-main">
+              <div class="hist-snap-top">
+                <span class="mono hist-snap-date">${esc(dt)}</span>
+                ${isActive ? '<span class="hist-cur-badge">当前</span>' : ''}
+                ${s.label ? `<span class="hist-lbl-badge">${esc(s.label)}</span>` : ''}
+                <span class="hist-snap-fn truncate" title="${esc(s.filename)}">${esc(s.filename)}</span>
+              </div>
+              <div class="hist-snap-meta mono">
+                <span><b>${s.playedCount}</b> 谱</span>
+                <span>${esc(cpStr)}</span>
+                <span>HC+ ${hcPlus}</span>
+                <span>AAA ${aaaCnt}</span>
+              </div>
+              <div class="hist-snap-edit hidden" data-edit-wrap="${esc(s.id)}">
+                <input type="text" class="text-input hist-lbl-input" maxlength="32" placeholder="输入备注（如：十段合格 / 11月练习前）" value="${esc(s.label || '')}" />
+                <button type="button" class="btn btn-sm btn-primary hist-lbl-save" data-snap-id="${esc(s.id)}">保存</button>
+                <button type="button" class="btn btn-sm hist-lbl-cancel">取消</button>
+              </div>
+            </div>
+            <div class="hist-snap-actions">
+              ${!isActive ? `<button type="button" class="btn btn-sm hist-act-load" data-snap-id="${esc(s.id)}" title="切换主诊断面板查看这份历史快照">载入</button>` : ''}
+              <button type="button" class="btn btn-sm hist-act-label" data-snap-id="${esc(s.id)}">备注</button>
+              <button type="button" class="btn btn-sm btn-ghost-danger hist-act-del" data-snap-id="${esc(s.id)}">删除</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      let compareCardHtml = '';
+      if (modeSnaps.length < 2) {
+        compareCardHtml = `
+          <div class="card hist-empty-compare">
+            <h3 class="csv-sec-title" style="margin-bottom:4px;">再导入 1 份不同日期的 ${modeUpper} CSV，即可解锁历史对比与单曲轨迹</h3>
+            <p class="csv-sec-sub">
+              当前这份成绩已自动存档到本机浏览器（IndexedDB）。后续每次导出新的 Konami CSV 导入，或点击上方「+ 导入历史 CSV」一次多选几份旧档，即可自动分析：
+              <b>四血条 CP 成长曲线</b>、<b>推灯突破清单</b>、<b>EX 涨分 / BP 减少排行</b>，以及<b>同一首歌的历次变化记录</b>。
+            </p>
+          </div>
+        `;
+      } else if (histDiffObj) {
+        const k = histDiffObj.kpi;
+        const primaryKey = evalGauge === 'hc' ? 'hc' : 'nc';
+        const priCp = k.cpDeltas[primaryKey] || k.cpDeltas.nc;
+        const gaugeOrder = [['ec', 'EC'], ['nc', 'NC'], ['hc', 'HC'], ['exhc', 'EXHC']];
+        const gaugeSubStr = gaugeOrder.map(([gk, gl]) => {
+          const d = k.cpDeltas[gk];
+          if (!d || d.after === null) return '';
+          const dTxt = d.delta !== null ? ` (<span class="${deltaCls(d.delta)}">${fmtSigned(d.delta, 1)}</span>)` : '';
+          return `${gl} ${d.after.toFixed(1)}${dTxt}`;
+        }).filter(Boolean).join(' · ');
+
+        const histSortOpts = [
+          ['impact', '按突破权重'],
+          ['lv', '按等级'],
+          ['scoreDelta', '按 EX 涨幅'],
+          ['bpDelta', '按 BP 降幅'],
+          ['title', '按曲名'],
+        ];
+
+        compareCardHtml = `
+          <div class="card hist-compare-card">
+            <div class="hist-compare-head">
+              <div>
+                <h2 class="csv-sec-title">快照进步对比（${modeUpper}）</h2>
+                <p class="csv-sec-sub">自由选择任意两份本地快照，对比推灯突破、EX 刷新、BP 降低与能力线成长。</p>
+              </div>
+              <div class="hist-preset-btns">
+                <button type="button" id="btn-hist-pair-recent" class="btn btn-sm">最近两次</button>
+                <button type="button" id="btn-hist-pair-span" class="btn btn-sm">首尾总进步</button>
+              </div>
+            </div>
+
+            <div class="hist-pair-bar">
+              <label class="hist-pair-field">
+                <span class="filter-label">对比基准（旧）</span>
+                <select id="csv-hist-base-sel" class="select-input">
+                  ${modeSnaps.map((s) => `<option value="${esc(s.id)}" ${s.id === baseSnap.id ? 'selected' : ''}>${esc(formatSnapShortLabel(s))}</option>`).join('')}
+                </select>
+              </label>
+              <span class="hist-pair-arrow mono">→</span>
+              <label class="hist-pair-field">
+                <span class="filter-label">目标快照（新）</span>
+                <select id="csv-hist-target-sel" class="select-input">
+                  ${modeSnaps.map((s) => `<option value="${esc(s.id)}" ${s.id === targetSnap.id ? 'selected' : ''}>${esc(formatSnapShortLabel(s))}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+
+            <div class="hist-kpi-grid">
+              <div class="hist-kpi-cell">
+                <div class="csv-mini-lbl">${evalGaugeShort} 有效能力线</div>
+                <div class="hist-kpi-val mono">
+                  ${priCp?.after !== null && priCp?.after !== undefined ? `CP ${priCp.after.toFixed(1)}` : '—'}
+                  ${priCp?.delta !== null && priCp?.delta !== undefined ? `<span class="hist-kpi-delta ${deltaCls(priCp.delta)}">${fmtSigned(priCp.delta, 1)}</span>` : ''}
+                </div>
+                <div class="csv-mini-sub mono">${gaugeSubStr || '样本不足'}</div>
+              </div>
+              <div class="hist-kpi-cell">
+                <div class="csv-mini-lbl">推灯突破</div>
+                <div class="hist-kpi-val mono">
+                  ${histDiffObj.counts.lampUp} <span class="hist-kpi-unit">谱</span>
+                  <span class="hist-kpi-delta ${deltaCls(k.lampDeltas.HC_PLUS)}">HC+ ${fmtSigned(k.lampDeltas.HC_PLUS)}</span>
+                </div>
+                <div class="csv-mini-sub mono">FC ${fmtSigned(k.lampDeltas.FC)} · EXHC ${fmtSigned(k.lampDeltas.EXHC)} · NC+ ${fmtSigned(k.lampDeltas.NC_PLUS)}</div>
+              </div>
+              <div class="hist-kpi-cell">
+                <div class="csv-mini-lbl">EX 刷新 &amp; 评价提升</div>
+                <div class="hist-kpi-val mono">
+                  ${histDiffObj.counts.scoreUp} <span class="hist-kpi-unit">谱</span>
+                  <span class="hist-kpi-delta ${deltaCls(k.djDeltas.AAA)}">AAA ${fmtSigned(k.djDeltas.AAA)}</span>
+                </div>
+                <div class="csv-mini-sub mono">AA+ ${fmtSigned(k.djDeltas.AA_PLUS)} · 评价升级 ${histDiffObj.counts.djUp} 谱</div>
+              </div>
+              <div class="hist-kpi-cell">
+                <div class="csv-mini-lbl">新增游玩 &amp; 控 BP</div>
+                <div class="hist-kpi-val mono">
+                  ${histDiffObj.counts.newPlay} <span class="hist-kpi-unit">新谱</span>
+                  <span class="hist-kpi-delta ${deltaCls(k.playedDelta)}">总 ${fmtSigned(k.playedDelta)}</span>
+                </div>
+                <div class="csv-mini-sub mono">BP 减少 ${histDiffObj.counts.bpDown} 谱 · 共 ${histDiffObj.counts.total} 谱变化</div>
+              </div>
+            </div>
+
+            ${renderCsvHistoryTrendSvg(modeSnaps)}
+
+            <div class="csv-songs-toolbar hist-diff-toolbar">
+              <div id="csv-hist-pills-area" class="csv-songs-pills-area"></div>
+              <div class="filter-row filter-row-divider hist-diff-ctrl">
+                <input id="csv-hist-search" type="search" class="text-input csv-tbl-search" placeholder="筛选变化曲名 / 曲师 / 版本..." value="${esc(state.csvHistSearch)}" />
+                <select id="csv-hist-sort" class="select-input" aria-label="变化排序方式">
+                  ${histSortOpts.map(([v, l]) => `<option value="${v}" ${state.csvHistSort === v ? 'selected' : ''}>${l}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div id="csv-hist-diff-results"></div>
+          </div>
+
+          <div class="card hist-song-card" id="csv-hist-song-card">
+            <div class="hist-compare-head">
+              <div>
+                <h2 class="csv-sec-title">单曲历史轨迹（同一首歌的历次记录）</h2>
+                <p class="csv-sec-sub">搜索任意歌曲或点击下方高频进步曲目，查看该谱面在所有本地快照中的推灯、EX 与 BP 演进。</p>
+              </div>
+            </div>
+            <div class="hist-song-search-row">
+              <input id="csv-hist-song-search" type="search" class="text-input" placeholder="输入曲名 / 曲师查询单曲历史轨迹..." value="${esc(state.csvHistSongQuery)}" />
+            </div>
+            <div id="csv-hist-song-results"></div>
+          </div>
+        `;
+      }
+
+      sectionBodyHtml = `
+        <input id="csv-hist-multi-input" type="file" accept=".csv,text/csv" multiple class="hidden" />
+        <input id="csv-hist-json-input" type="file" accept=".json,application/json" class="hidden" />
+        <div class="hist-stack">
+          <div class="card hist-lib-card">
+            <div class="hist-lib-head">
+              <div>
+                <h2 class="csv-sec-title">本地 CSV 快照备份（${modeUpper} · 共 ${modeSnaps.length} 份）</h2>
+                <p class="csv-sec-sub">每次导入 CSV 会自动去重存档到本机浏览器 IndexedDB；可随时导出 JSON 备份文件防清理丢失。</p>
+              </div>
+              <div class="hist-lib-btns">
+                <button type="button" id="btn-hist-batch-csv" class="btn btn-sm btn-primary">+ 导入历史 CSV</button>
+                <button type="button" id="btn-hist-export-json" class="btn btn-sm">导出本地备份</button>
+                <button type="button" id="btn-hist-import-json" class="btn btn-sm">恢复备份</button>
+              </div>
+            </div>
+            ${state.csvHistNotice ? `<div class="hist-notice">${esc(state.csvHistNotice)}</div>` : ''}
+            <div class="hist-snap-list">
+              ${snapRowsHtml || '<div style="font-size:12px;color:var(--muted);padding:8px 0;">正在同步当前快照到本地存档...</div>'}
+            </div>
+          </div>
+          ${compareCardHtml}
+        </div>
+      `;
     } else {
       const primaryLvs = activeLvs.filter((l) => focusSet.has(l.lv) || l.played >= 60).sort((a, b) => b.lv - a.lv);
       const primaryLvSet = new Set(primaryLvs.map((l) => l.lv));
@@ -3556,10 +4646,11 @@
         </div>
       </div>
 
-      <!-- 3. Calm 5-Tab Section Navigation -->
+      <!-- 3. Calm 6-Tab Section Navigation -->
       <div class="csv-nav-tabs" role="tablist">
         <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'overview' ? 'active' : ''}" data-csec="overview"><span class="lbl-full">能力画像</span><span class="lbl-short">能力画像</span></button>
         <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'songs' ? 'active' : ''}" data-csec="songs"><span class="lbl-full">成绩明细表 (${rep.playedCount})</span><span class="lbl-short">成绩表</span></button>
+        <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'history' ? 'active' : ''}" data-csec="history"><span class="lbl-full">历史对比 (${modeSnaps.length})</span><span class="lbl-short">历史${modeSnaps.length ? ` (${modeSnaps.length})` : ''}</span></button>
         <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'grip' ? 'active' : ''}" data-csec="grip"><span class="lbl-full">${isSp ? `手法与选项建议${rep.gripCoach?.candidates?.length ? ` (${rep.gripCoach.candidates.length})` : ''}` : '选项减负说明'}</span><span class="lbl-short">${isSp ? '手法建议' : '选项说明'}</span></button>
         <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'coach' ? 'active' : ''}" data-csec="coach"><span class="lbl-full">推灯练歌计划</span><span class="lbl-short">练歌计划</span></button>
         <button type="button" role="tab" class="csv-nav-tab ${activeSec === 'lamps' ? 'active' : ''}" data-csec="lamps"><span class="lbl-full">清灯分布 (${activeLvs.length}级)</span><span class="lbl-short">清灯分布</span></button>
@@ -3580,6 +4671,7 @@
       state.csvFilename = null;
       state.csvParsed = null;
       state.csvReport = null;
+      state.csvActiveSnapshotId = null;
       state.csvError = null;
       try { localStorage.removeItem(CSV_STORAGE_KEY); } catch (_) {}
       renderAll();
@@ -3812,6 +4904,127 @@
         persistUiPrefs();
       });
       renderCsvSongsTableBody(rep);
+    }
+    if (activeSec === 'history') {
+      document.getElementById('btn-hist-batch-csv')?.addEventListener('click', () => {
+        document.getElementById('csv-hist-multi-input')?.click();
+      });
+      document.getElementById('csv-hist-multi-input')?.addEventListener('change', (e) => {
+        if (e.target.files?.length) batchImportCsvFiles(e.target.files);
+        e.target.value = '';
+      });
+      document.getElementById('btn-hist-export-json')?.addEventListener('click', exportLocalSnapshotsJson);
+      document.getElementById('btn-hist-import-json')?.addEventListener('click', () => {
+        document.getElementById('csv-hist-json-input')?.click();
+      });
+      document.getElementById('csv-hist-json-input')?.addEventListener('change', (e) => {
+        const f = e.target.files?.[0];
+        if (f) f.text().then(importLocalSnapshotsJson);
+        e.target.value = '';
+      });
+      root.querySelectorAll('.hist-act-load').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const snap = state.csvSnapshots.find((s) => s.id === btn.dataset.snapId);
+          if (snap) loadSnapshotIntoWorkspace(snap);
+        });
+      });
+      root.querySelectorAll('.hist-act-del').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          deleteLocalSnapshot(btn.dataset.snapId);
+        });
+      });
+      root.querySelectorAll('.hist-act-label').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const wrap = root.querySelector(`[data-edit-wrap="${CSS.escape(btn.dataset.snapId)}"]`);
+          if (!wrap) return;
+          wrap.classList.toggle('hidden');
+          const inp = wrap.querySelector('.hist-lbl-input');
+          if (!wrap.classList.contains('hidden') && inp) {
+            inp.focus();
+            inp.select();
+          }
+        });
+      });
+      root.querySelectorAll('.hist-lbl-save').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const wrap = btn.closest('.hist-snap-edit');
+          const inp = wrap?.querySelector('.hist-lbl-input');
+          updateLocalSnapshotLabel(btn.dataset.snapId, inp ? inp.value : '');
+        });
+      });
+      root.querySelectorAll('.hist-lbl-cancel').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          btn.closest('.hist-snap-edit')?.classList.add('hidden');
+        });
+      });
+      root.querySelectorAll('.hist-lbl-input').forEach((inp) => {
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            const btn = inp.closest('.hist-snap-edit')?.querySelector('.hist-lbl-save');
+            if (btn) btn.click();
+          } else if (e.key === 'Escape') {
+            inp.closest('.hist-snap-edit')?.classList.add('hidden');
+          }
+        });
+      });
+
+      document.getElementById('csv-hist-base-sel')?.addEventListener('change', (e) => {
+        state.csvHistBaseId = e.target.value;
+        if (state.csvHistBaseId === state.csvHistTargetId) {
+          const other = modeSnaps.find((s) => s.id !== state.csvHistBaseId);
+          if (other) state.csvHistTargetId = other.id;
+        }
+        state.csvHistPage = 1;
+        renderCsvWorkspace();
+      });
+      document.getElementById('csv-hist-target-sel')?.addEventListener('change', (e) => {
+        state.csvHistTargetId = e.target.value;
+        if (state.csvHistTargetId === state.csvHistBaseId) {
+          const other = modeSnaps.find((s) => s.id !== state.csvHistTargetId);
+          if (other) state.csvHistBaseId = other.id;
+        }
+        state.csvHistPage = 1;
+        renderCsvWorkspace();
+      });
+      document.getElementById('btn-hist-pair-recent')?.addEventListener('click', () => {
+        if (modeSnaps.length >= 2) {
+          state.csvHistBaseId = modeSnaps[modeSnaps.length - 2].id;
+          state.csvHistTargetId = modeSnaps[modeSnaps.length - 1].id;
+          state.csvHistPage = 1;
+          renderCsvWorkspace();
+        }
+      });
+      document.getElementById('btn-hist-pair-span')?.addEventListener('click', () => {
+        if (modeSnaps.length >= 2) {
+          state.csvHistBaseId = modeSnaps[0].id;
+          state.csvHistTargetId = modeSnaps[modeSnaps.length - 1].id;
+          state.csvHistPage = 1;
+          renderCsvWorkspace();
+        }
+      });
+
+      if (histDiffObj) {
+        document.getElementById('csv-hist-search')?.addEventListener('input', (e) => {
+          state.csvHistSearch = e.target.value;
+          state.csvHistPage = 1;
+          renderCsvHistoryDiffArea(histDiffObj, rep.mode);
+        });
+        document.getElementById('csv-hist-sort')?.addEventListener('change', (e) => {
+          state.csvHistSort = e.target.value;
+          state.csvHistPage = 1;
+          renderCsvHistoryDiffArea(histDiffObj, rep.mode);
+          persistUiPrefs();
+        });
+        renderCsvHistoryDiffArea(histDiffObj, rep.mode);
+      }
+
+      if (modeSnaps.length >= 2) {
+        document.getElementById('csv-hist-song-search')?.addEventListener('input', (e) => {
+          state.csvHistSongQuery = e.target.value;
+          renderCsvSongTimelineArea(modeSnaps, rep.mode);
+        });
+        renderCsvSongTimelineArea(modeSnaps, rep.mode);
+      }
     }
 
     persistUiPrefs();
@@ -4119,6 +5332,7 @@
     bindGlobalEvents();
     prefsRestored = true;
     renderAll();
+    loadSnapshotsOnBoot();
   }
 
   async function boot() {
