@@ -13,6 +13,7 @@
   const THEME_STORAGE_KEY = 'iidx_textage_theme_v1';
   const SP_SIDE_STORAGE_KEY = 'iidx_textage_sp_side_v1';
   const SP_STYLE_STORAGE_KEY = 'iidx_textage_sp_style_v1';
+  const LEVELS_STORAGE_KEY = 'iidx_textage_levels_v1';
 
   const RADAR_CFG = {
     sp: {
@@ -78,6 +79,8 @@
     spSide: '1p', // '1p' (left turntable) | '2p' (right turntable)
     spStyle: '1048', // '1048' | 'sym' | 'half35' | 'wrist' | 'hokuto'
     levels: new Set([12]),
+    levelsByMode: { sp: new Set([12]), dp: new Set([12]) },
+    levelsSourceByMode: { sp: 'default', dp: 'default' }, // 'default' | 'csv' | 'user'
     levelMulti: false,
     diffs: new Set(['B', 'N', 'H', 'A', 'L']),
     tiers: new Set(), // empty = ALL tiers
@@ -184,6 +187,73 @@
 
   function activeExplorerMode() {
     return state.tab === 'dp' ? 'dp' : 'sp';
+  }
+
+  function sanitizeLevels(arr) {
+    if (!Array.isArray(arr)) return null;
+    const set = new Set();
+    for (const v of arr) {
+      const n = Number(v);
+      if (Number.isInteger(n) && n >= 1 && n <= 12) set.add(n);
+    }
+    if (!set.size) return null;
+    return [...set].sort((a, b) => a - b);
+  }
+
+  function getCsvFocusLevels(rep) {
+    const focus = sanitizeLevels(rep?.focusLevels);
+    if (focus) return focus;
+    const prim = Number(rep?.primaryLevel);
+    if (Number.isInteger(prim) && prim >= 1 && prim <= 12) return [prim];
+    return [12];
+  }
+
+  function persistLevelPrefs() {
+    try {
+      const payload = {
+        sp: {
+          levels: [...state.levelsByMode.sp].sort((a, b) => a - b),
+          source: state.levelsSourceByMode.sp,
+        },
+        dp: {
+          levels: [...state.levelsByMode.dp].sort((a, b) => a - b),
+          source: state.levelsSourceByMode.dp,
+        },
+        levelMulti: !!state.levelMulti,
+      };
+      localStorage.setItem(LEVELS_STORAGE_KEY, JSON.stringify(payload));
+    } catch (_) {}
+  }
+
+  function loadLevelPrefs() {
+    try {
+      const raw = localStorage.getItem(LEVELS_STORAGE_KEY);
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return;
+      for (const m of ['sp', 'dp']) {
+        const entry = obj[m];
+        const lvs = sanitizeLevels(Array.isArray(entry) ? entry : entry?.levels);
+        if (lvs) {
+          state.levelsByMode[m] = new Set(lvs);
+          state.levelsSourceByMode[m] = (entry && (entry.source === 'user' || entry.source === 'csv')) ? entry.source : 'user';
+        }
+      }
+      if (typeof obj.levelMulti === 'boolean') {
+        state.levelMulti = obj.levelMulti;
+      }
+    } catch (_) {}
+  }
+
+  function setModeLevels(mode, levelsIterable, source = 'user', save = true) {
+    const m = mode === 'dp' ? 'dp' : 'sp';
+    const clean = sanitizeLevels([...levelsIterable]) || [12];
+    state.levelsByMode[m] = new Set(clean);
+    state.levelsSourceByMode[m] = source;
+    if (activeExplorerMode() === m) {
+      state.levels = new Set(clean);
+    }
+    if (save) persistLevelPrefs();
   }
 
   function getUserRecord(mode, chartId) {
@@ -537,12 +607,14 @@
     bar.innerHTML = html;
 
     if (mobileSmallMQ.matches) {
-      const lvKey = state.levels.size === 1 ? `lv_${[...state.levels][0]}` : (isAllSelected ? 'all' : 'multi');
+      const sortedLvs = [...state.levels].sort((a, b) => a - b);
+      const lvKey = isAllSelected ? 'all' : `lvs_${sortedLvs.join('_')}`;
       if (lvKey !== lastCenteredLvKey) {
         lastCenteredLvKey = lvKey;
-        const targetBtn = state.levels.size === 1
-          ? bar.querySelector(`[data-lv="${[...state.levels][0]}"]`)
-          : (isAllSelected ? document.getElementById('btn-lv-all') : null);
+        const midLv = sortedLvs[Math.floor(sortedLvs.length / 2)];
+        const targetBtn = isAllSelected
+          ? document.getElementById('btn-lv-all')
+          : bar.querySelector(`[data-lv="${midLv}"]`);
         if (targetBtn) {
           bar.scrollLeft = Math.max(0, targetBtn.offsetLeft - (bar.clientWidth - targetBtn.offsetWidth) / 2);
         }
@@ -553,9 +625,12 @@
 
     document.getElementById('btn-lv-all').addEventListener('click', () => {
       if (state.levels.size === 12) {
-        state.levels = new Set([12]);
+        const fallback = (state.csvReport && state.csvReport.mode === mode)
+          ? getCsvFocusLevels(state.csvReport)
+          : [12];
+        setModeLevels(mode, fallback, 'user');
       } else {
-        state.levels = new Set(ALL_LEVELS);
+        setModeLevels(mode, ALL_LEVELS, 'user');
       }
       resetCpRange();
       state.selectedId = null;
@@ -566,23 +641,26 @@
 
     document.getElementById('btn-lv-multi').addEventListener('click', () => {
       state.levelMulti = !state.levelMulti;
+      persistLevelPrefs();
       renderLevelAndDiffBars();
     });
 
     bar.querySelectorAll('[data-lv]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const lv = Number(btn.dataset.lv);
+        let nextSet = new Set(state.levels);
         if (state.levelMulti || e.shiftKey || e.ctrlKey || e.metaKey) {
-          if (state.levels.size === 12 && !state.levelMulti) {
-            state.levels = new Set([lv]);
-          } else if (state.levels.has(lv)) {
-            if (state.levels.size > 1) state.levels.delete(lv);
+          if (nextSet.size === 12 && !state.levelMulti) {
+            nextSet = new Set([lv]);
+          } else if (nextSet.has(lv)) {
+            if (nextSet.size > 1) nextSet.delete(lv);
           } else {
-            state.levels.add(lv);
+            nextSet.add(lv);
           }
         } else {
-          state.levels = new Set([lv]);
+          nextSet = new Set([lv]);
         }
+        setModeLevels(mode, nextSet, 'user');
         resetCpRange();
         state.selectedId = null;
         state.tablePage = 1;
@@ -2052,6 +2130,15 @@
       state.csvError = null;
       recomputeCsvReport();
 
+      if (state.csvReport) {
+        setModeLevels(mode, getCsvFocusLevels(state.csvReport), 'csv');
+        state.tiers.clear();
+        resetCpRange();
+        state.selectedId = null;
+        state.tablePage = 1;
+        state.expandedGroups.clear();
+      }
+
       try {
         localStorage.setItem(CSV_STORAGE_KEY, JSON.stringify({ text, filename, mode }));
       } catch (_) {}
@@ -2749,9 +2836,15 @@
     });
     document.getElementById('btn-jump-explorer')?.addEventListener('click', () => {
       state.tab = rep.mode;
-      state.levels = new Set([rep.primaryLevel]);
+      if (state.levelsSourceByMode[rep.mode] === 'default') {
+        setModeLevels(rep.mode, getCsvFocusLevels(rep), 'csv');
+      } else {
+        state.levels = new Set(state.levelsByMode[rep.mode]);
+      }
       state.tiers.clear();
       resetCpRange();
+      state.selectedId = null;
+      state.tablePage = 1;
       history.replaceState(null, '', '#' + state.tab);
       renderAll();
     });
@@ -2785,6 +2878,9 @@
           state.csvMode = nextMode;
           state.csvTargetGaugeManual = false;
           recomputeCsvReport();
+          if (state.csvReport && state.levelsSourceByMode[state.csvMode] !== 'user') {
+            setModeLevels(state.csvMode, getCsvFocusLevels(state.csvReport), 'csv');
+          }
           try {
             localStorage.setItem(CSV_STORAGE_KEY, JSON.stringify({
               text: state.csvRawText, filename: state.csvFilename, mode: state.csvMode,
@@ -2798,10 +2894,11 @@
     const jumpToLv = (lv) => {
       hideLampTooltip();
       state.tab = rep.mode;
-      state.levels = new Set([lv]);
+      setModeLevels(rep.mode, [lv], 'user');
       state.tiers.clear();
       resetCpRange();
       state.selectedId = null;
+      state.tablePage = 1;
       history.replaceState(null, '', '#' + state.tab);
       renderAll();
     };
@@ -3004,6 +3101,7 @@
         state.tab = next;
         state.selectedId = null;
         if ((next === 'sp' || next === 'dp') && prev !== next) {
+          state.levels = new Set(state.levelsByMode[next]);
           state.tag = 'ALL';
           state.spOpt = 'ALL';
           state.dpOpt = 'ALL';
@@ -3159,6 +3257,7 @@
         state.spStyle = savedStyle;
       }
     } catch (_) {}
+    loadLevelPrefs();
     VER_INFO = P.vers.map((name, idx) => ({
       idx,
       code: (P.verCodes && P.verCodes[idx]) || String(idx + 1).padStart(2, '0'),
@@ -3184,10 +3283,14 @@
           state.csvMode = obj.mode === 'dp' ? 'dp' : 'sp';
           state.csvParsed = A.parseKonamiCsv(obj.text, state.csvFilename);
           recomputeCsvReport();
+          if (state.csvReport && state.levelsSourceByMode[state.csvMode] === 'default') {
+            setModeLevels(state.csvMode, getCsvFocusLevels(state.csvReport), 'csv');
+          }
         }
       }
     } catch (_) {}
 
+    state.levels = new Set(state.levelsByMode[activeExplorerMode()]);
     document.getElementById('boot-loader').classList.add('hidden');
     bindGlobalEvents();
     renderAll();
