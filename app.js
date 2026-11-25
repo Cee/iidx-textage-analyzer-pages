@@ -2194,11 +2194,10 @@
     const avgY = py(avgNps);
 
     const pts = [];
-    pts.push(`${px(0).toFixed(1)},${py(bins[0]).toFixed(1)}`);
     for (let i = 0; i < totalSec; i++) {
-      pts.push(`${px(i + 0.5).toFixed(1)},${py(bins[i]).toFixed(1)}`);
+      pts.push(`${px(i).toFixed(1)},${py(bins[i]).toFixed(1)}`);
     }
-    pts.push(`${px(totalSec).toFixed(1)},${py(bins[totalSec - 1]).toFixed(1)}`);
+    pts.push(`${px(totalSec).toFixed(1)},${py(0).toFixed(1)}`);
     const polyStr = pts.join(' ');
     const areaAboveStr = `${px(0).toFixed(1)},${avgY.toFixed(1)} ${polyStr} ${px(totalSec).toFixed(1)},${avgY.toFixed(1)}`;
 
@@ -2225,7 +2224,7 @@
     const loId = `bpl_lo_${uid}`;
     const bgId = `bpl_bg_${uid}`;
     const fillId = `bpl_fill_${uid}`;
-    const peakX = px(peakSec + 0.5).toFixed(1);
+    const peakX = px(peakSec).toFixed(1);
     const peakY = py(peakNps).toFixed(1);
 
     const avgDisplay = avgNps.toFixed(2).padStart(5, '0');
@@ -2660,10 +2659,10 @@
         const updateAtClientX = (clientX) => {
           const rect = hit.getBoundingClientRect();
           if (!rect || rect.width <= 0) return;
-          const frac = Math.max(0, Math.min(0.9999, (clientX - rect.left) / rect.width));
-          const sec = Math.min(prof.totalSec - 1, Math.floor(frac * prof.totalSec));
+          const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+          const sec = Math.min(prof.totalSec - 1, Math.max(0, Math.round(frac * prof.totalSec)));
           const val = prof.bins[sec];
-          const x = padL + ((sec + 0.5) / Math.max(1, prof.totalSec)) * plotW;
+          const x = padL + (sec / Math.max(1, prof.totalSec)) * plotW;
           const y = padT + plotH * (1 - Math.max(0, Math.min(yMax, val)) / Math.max(1, yMax));
           line.setAttribute('x1', x.toFixed(1));
           line.setAttribute('x2', x.toFixed(1));
