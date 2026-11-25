@@ -2038,11 +2038,22 @@
       const p1Pct = (c.p1Notes / pTot * 100).toFixed(1);
       const p2Pct = (c.p2Notes / pTot * 100).toFixed(1);
       const diffStr = c.p1Notes === c.p2Notes ? '完全均衡' : (c.p1Notes > c.p2Notes ? `P1 偏重 +${c.p1Notes - c.p2Notes}` : `P2 偏重 +${c.p2Notes - c.p1Notes}`);
+      const dpGainPct = (c.optGain * 100).toFixed(1);
       optCard = `
         <div class="inset-box" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
             <span style="font-weight:800;color:var(--dp-ink);">DP 多选项生物力学推荐</span>
-            <span class="mono" title="相对正規 (-) 预计降低的综合手型与单手/跨键负荷百分比" style="font-size:11px;padding:2px 6px;border-radius:5px;background:var(--pos-soft);color:var(--pos);font-weight:700;">手型减负 -${(c.optGain * 100).toFixed(1)}%</span>
+            <div class="opt-gain-wrap">
+              <span class="opt-gain-badge mono">手型减负 -${dpGainPct}%</span>
+              <span class="help-tip-wrap">
+                <button type="button" class="help-tip-btn" aria-label="查看手型减负说明">?</button>
+                <div class="help-tip-pop" role="tooltip">
+                  <div class="help-tip-title">什么是 DP「手型减负 -${dpGainPct}%」？</div>
+                  <p>仅在标准 AC 合法 DP 选项中求解，量化相对「正規 (-)」预计降低的单手弱指、無理押し、無理皿与左右盘承重失衡比例（仅改善顺手度，不减少总物量）。</p>
+                  <div class="help-tip-foot">-8%以上 强烈推荐 · -4%~-8% 明显顺手 · -2%以内 正規已均衡</div>
+                </div>
+              </span>
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div style="background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 8px;">
@@ -2066,10 +2077,6 @@
               <div style="width:${p2Pct}%;background:#14b8a6;"></div>
             </div>
           </div>
-          <details class="opt-explain-details">
-            <summary>? 什么是「手型减负 -${(c.optGain * 100).toFixed(1)}%」</summary>
-            <p>量化切换到推荐 AC 合法 DP 选项后，相对「正規」预计降低的单手弱指、無理押し、無理皿与左右盘承重失衡比例；仅代表手型顺手度改善，并非降低总物量。</p>
-          </details>
         </div>
       `;
     } else if ((c.leftNotes || 0) + (c.rightNotes || 0) > 0) {
@@ -2085,11 +2092,22 @@
       const rightLabel = is2p ? '右手 5–7键(皿)' : '右手 4–7键';
       const leftCol = is2p ? '#3b82f6' : '#f59e0b';
       const rightCol = is2p ? '#f59e0b' : '#3b82f6';
+      const spGainPct = (c.optGain * 100).toFixed(1);
       optCard = `
         <div class="inset-box" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
             <span style="font-weight:800;color:var(--accent-ink);">SP 多选项生物力学推荐 (${is2p ? '2P 右皿' : '1P 左皿'})</span>
-            <span class="mono" title="相对正規 (-) 预计降低的手指耦合、弱指连打与皿侧按键综合负荷百分比" style="font-size:11px;padding:2px 6px;border-radius:5px;background:var(--pos-soft);color:var(--pos);font-weight:700;">手型减负 -${(c.optGain * 100).toFixed(1)}%</span>
+            <div class="opt-gain-wrap">
+              <span class="opt-gain-badge mono">手型减负 -${spGainPct}%</span>
+              <span class="help-tip-wrap">
+                <button type="button" class="help-tip-btn" aria-label="查看手型减负说明">?</button>
+                <div class="help-tip-pop" role="tooltip">
+                  <div class="help-tip-title">什么是「手型减负 -${spGainPct}%」？</div>
+                  <p>基于当前 ${is2p ? '2P 右皿' : '1P 左皿'} 指法模型，综合计算皿侧按键压迫、1-2/6-7 弱指连打、手指耦合阻力、黑白键顺手度与固定纵连五项负荷；相对「正規 (-)」预计降低的手型负荷比例（随机系按多组排列期望均值估算，不减少总物量）。</p>
+                  <div class="help-tip-foot">-8%以上 强烈推荐 · -4%~-8% 明显顺手 · -2%以内 正規已均衡</div>
+                </div>
+              </span>
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div style="background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 8px;">
@@ -2113,10 +2131,6 @@
               <div style="width:${rPct}%;background:${rightCol};"></div>
             </div>
           </div>
-          <details class="opt-explain-details">
-            <summary>? 什么是「手型减负 -${(c.optGain * 100).toFixed(1)}%」</summary>
-            <p>基于当前 ${is2p ? '2P 右皿' : '1P 左皿'} 指法模型，综合计算皿侧按键压迫、1-2/6-7 弱指连打、手指耦合阻力、黑白键顺手度与固定纵连五项负荷；<b>-${(c.optGain * 100).toFixed(1)}%</b> 表示切换至推荐选项后相对「正規」预计降低的手型负荷比例（随机系按多组排列期望均值估算）。</p>
-          </details>
         </div>
       `;
 
@@ -2223,11 +2237,30 @@
     `;
   }
 
+  let helpTipOutsideBound = false;
   function bindInspectorInteractive(container, modalCtx) {
     if (!container) return;
     const sel = container.querySelector('.ins-grip-select');
     if (sel) {
       sel.addEventListener('change', (e) => setSpStyle(e.target.value, modalCtx));
+    }
+    container.querySelectorAll('.help-tip-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wrap = btn.closest('.help-tip-wrap');
+        if (!wrap) return;
+        const willOpen = !wrap.classList.contains('is-open');
+        document.querySelectorAll('.help-tip-wrap.is-open').forEach((el) => el.classList.remove('is-open'));
+        if (willOpen) wrap.classList.add('is-open');
+      });
+    });
+    if (!helpTipOutsideBound) {
+      helpTipOutsideBound = true;
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.help-tip-wrap')) {
+          document.querySelectorAll('.help-tip-wrap.is-open').forEach((el) => el.classList.remove('is-open'));
+        }
+      });
     }
   }
 

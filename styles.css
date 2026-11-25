@@ -1216,25 +1216,113 @@ a:hover { text-decoration: underline; }
   color: var(--ink);
 }
 
-.opt-explain-details {
-  padding-top: 6px;
-  border-top: 1px dashed var(--border);
-  font-size: 11.5px;
-  color: var(--muted);
+.opt-gain-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
 }
-.opt-explain-details > summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--muted);
-  list-style: none;
-  user-select: none;
+.opt-gain-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--pos-soft);
+  color: var(--pos);
+  font-weight: 700;
+  white-space: nowrap;
 }
-.opt-explain-details > summary::-webkit-details-marker { display: none; }
-.opt-explain-details > summary:hover { color: var(--ink-2); }
-.opt-explain-details p {
-  margin: 6px 0 0;
+.help-tip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.help-tip-btn {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.help-tip-wrap:hover .help-tip-btn,
+.help-tip-wrap:focus-within .help-tip-btn,
+.help-tip-wrap.is-open .help-tip-btn {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.help-tip-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 45;
+  width: min(296px, calc(100vw - 44px));
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
   color: var(--ink-2);
+  font-size: 11.5px;
   line-height: 1.55;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+}
+.help-tip-pop::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  right: 0;
+  width: 44px;
+  height: 10px;
+}
+.help-tip-pop::after {
+  content: "";
+  position: absolute;
+  top: -5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  background: var(--surface);
+  border-top: 1px solid var(--border-strong);
+  border-left: 1px solid var(--border-strong);
+  transform: rotate(45deg);
+}
+.help-tip-wrap:hover .help-tip-pop,
+.help-tip-wrap:focus-within .help-tip-pop,
+.help-tip-wrap.is-open .help-tip-pop {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.help-tip-title {
+  font-weight: 800;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.help-tip-pop p {
+  margin: 0;
+}
+.help-tip-foot {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+  color: var(--muted);
 }
 
 /* SP Grip / Fingering Recommendation Card & Pills */
