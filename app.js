@@ -14,6 +14,7 @@
   const SP_SIDE_STORAGE_KEY = 'iidx_textage_sp_side_v1';
   const SP_STYLE_STORAGE_KEY = 'iidx_textage_sp_style_v1';
   const LEVELS_STORAGE_KEY = 'iidx_textage_levels_v1';
+  const UI_PREFS_STORAGE_KEY = 'iidx_textage_ui_prefs_v1';
 
   const RADAR_CFG = {
     sp: {
@@ -67,6 +68,7 @@
   let cpDomain = { min: 0, max: 100, preCpList: [], bins: 32 };
   let cpBarReady = false;
   let cpDragRaf = 0;
+  let prefsRestored = false;
   const mobileInspectorMQ = window.matchMedia('(max-width: 1180px)');
   const mobileSmallMQ = window.matchMedia('(max-width: 768px)');
   const fineHoverMQ = window.matchMedia('(hover: hover) and (pointer: fine)');
@@ -76,6 +78,7 @@
 
   const state = {
     tab: location.hash === '#dp' ? 'dp' : (location.hash === '#csv' ? 'csv' : 'sp'),
+    lastExplorerMode: location.hash === '#dp' ? 'dp' : 'sp',
     spSide: '1p', // '1p' (left turntable) | '2p' (right turntable)
     spStyle: '1048', // '1048' | 'sym' | 'half35' | 'wrist' | 'hokuto'
     levels: new Set([12]),
@@ -95,6 +98,7 @@
     multiBoardGroup: 'level', // 'level' | 'cp'
     expandedGroups: new Set(),
     tag: 'ALL',
+    tagByMode: { sp: 'ALL', dp: 'ALL' },
     spOpt: 'ALL',
     dpOpt: 'ALL',
     lampFilter: 'ALL',
@@ -208,9 +212,13 @@
     return [12];
   }
 
-  function persistLevelPrefs() {
+  function persistUiPrefs() {
+    if (!prefsRestored) return;
     try {
-      const payload = {
+      const verCodes = [...state.selectedVers]
+        .map((idx) => VER_INFO[idx]?.code)
+        .filter(Boolean);
+      const levelsPayload = {
         sp: {
           levels: [...state.levelsByMode.sp].sort((a, b) => a - b),
           source: state.levelsSourceByMode.sp,
@@ -221,25 +229,136 @@
         },
         levelMulti: !!state.levelMulti,
       };
-      localStorage.setItem(LEVELS_STORAGE_KEY, JSON.stringify(payload));
+      const uiPayload = {
+        v: 1,
+        tab: state.tab,
+        lastExplorerMode: state.lastExplorerMode,
+        gauge: state.gauge,
+        scope: state.scope,
+        view: state.view,
+        diffs: [...state.diffs],
+        tiers: [...state.tiers],
+        verCodes,
+        multiBoardGroup: state.multiBoardGroup,
+        cpMin: state.cpMin,
+        cpMax: state.cpMax,
+        tagByMode: { sp: state.tagByMode.sp, dp: state.tagByMode.dp },
+        spOpt: state.spOpt,
+        dpOpt: state.dpOpt,
+        lampFilter: state.lampFilter,
+        sortCol: state.sortCol,
+        sortDir: state.sortDir,
+        csvSectionTab: state.csvSectionTab,
+        csvCoachTab: state.csvCoachTab,
+        csvTargetGauge: state.csvTargetGauge,
+        csvTargetGaugeManual: !!state.csvTargetGaugeManual,
+        csvTargetLevel: state.csvTargetLevel,
+        levelsByMode: { sp: levelsPayload.sp, dp: levelsPayload.dp },
+        levelMulti: levelsPayload.levelMulti,
+      };
+      localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(uiPayload));
+      localStorage.setItem(LEVELS_STORAGE_KEY, JSON.stringify(levelsPayload));
     } catch (_) {}
   }
 
-  function loadLevelPrefs() {
+  function persistLevelPrefs() {
+    persistUiPrefs();
+  }
+
+  function applySavedLevelsObj(levelsObj, fallbackMulti) {
+    if (!levelsObj || typeof levelsObj !== 'object') return;
+    for (const m of ['sp', 'dp']) {
+      const entry = levelsObj[m];
+      const lvs = sanitizeLevels(Array.isArray(entry) ? entry : entry?.levels);
+      if (lvs) {
+        state.levelsByMode[m] = new Set(lvs);
+        state.levelsSourceByMode[m] = (entry && (entry.source === 'user' || entry.source === 'csv')) ? entry.source : 'user';
+      }
+    }
+    if (typeof fallbackMulti === 'boolean') {
+      state.levelMulti = fallbackMulti;
+    }
+  }
+
+  function loadUiPrefs() {
+    const validGauges = new Set(['ec', 'nc', 'hc', 'exhc']);
+    const validViews = new Set(['board', 'table', 'delta', 'opt']);
+    const validDiffs = new Set(DIFF_LET);
+    const validTiers = new Set(TIER_ORDER_12);
+    const validCsvSec = new Set(['overview', 'grip', 'coach', 'lamps']);
+    const validCoachTab = new Set(['quick', 'weak', 'core', 'outliers']);
+    const hasExplicitHash = location.hash === '#sp' || location.hash === '#dp' || location.hash === '#csv';
+
+    // Backward-compatible legacy level prefs fallback
     try {
-      const raw = localStorage.getItem(LEVELS_STORAGE_KEY);
+      const legacyLvRaw = localStorage.getItem(LEVELS_STORAGE_KEY);
+      if (legacyLvRaw) {
+        const legacyObj = JSON.parse(legacyLvRaw);
+        applySavedLevelsObj(legacyObj, legacyObj?.levelMulti);
+      }
+    } catch (_) {}
+
+    try {
+      const raw = localStorage.getItem(UI_PREFS_STORAGE_KEY);
       if (!raw) return;
       const obj = JSON.parse(raw);
       if (!obj || typeof obj !== 'object') return;
-      for (const m of ['sp', 'dp']) {
-        const entry = obj[m];
-        const lvs = sanitizeLevels(Array.isArray(entry) ? entry : entry?.levels);
-        if (lvs) {
-          state.levelsByMode[m] = new Set(lvs);
-          state.levelsSourceByMode[m] = (entry && (entry.source === 'user' || entry.source === 'csv')) ? entry.source : 'user';
-        }
+
+      if (!hasExplicitHash && (obj.tab === 'sp' || obj.tab === 'dp' || obj.tab === 'csv')) {
+        state.tab = obj.tab;
       }
-      if (typeof obj.levelMulti === 'boolean') {
+      if (obj.lastExplorerMode === 'sp' || obj.lastExplorerMode === 'dp') {
+        state.lastExplorerMode = obj.lastExplorerMode;
+      }
+      if (validGauges.has(obj.gauge)) {
+        state.gauge = obj.gauge;
+        state.sortCol = 's_' + obj.gauge;
+      }
+      if (obj.scope === 'ac' || obj.scope === 'all') {
+        state.scope = obj.scope;
+      }
+      if (validViews.has(obj.view)) {
+        state.view = obj.view;
+      }
+      if (Array.isArray(obj.diffs)) {
+        const cleanDiffs = obj.diffs.filter((d) => validDiffs.has(d));
+        if (cleanDiffs.length) state.diffs = new Set(cleanDiffs);
+      }
+      if (Array.isArray(obj.tiers)) {
+        state.tiers = new Set(obj.tiers.filter((t) => validTiers.has(t)));
+      }
+      if (Array.isArray(obj.verCodes) && VER_INFO.length) {
+        const codeSet = new Set(obj.verCodes);
+        const idxs = new Set();
+        for (const v of VER_INFO) {
+          if (codeSet.has(v.code)) idxs.add(v.idx);
+        }
+        state.selectedVers = idxs;
+      }
+      if (obj.multiBoardGroup === 'level' || obj.multiBoardGroup === 'cp') {
+        state.multiBoardGroup = obj.multiBoardGroup;
+      }
+      state.cpMin = (typeof obj.cpMin === 'number' && Number.isFinite(obj.cpMin)) ? obj.cpMin : null;
+      state.cpMax = (typeof obj.cpMax === 'number' && Number.isFinite(obj.cpMax)) ? obj.cpMax : null;
+      if (obj.tagByMode && typeof obj.tagByMode === 'object') {
+        if (typeof obj.tagByMode.sp === 'string') state.tagByMode.sp = obj.tagByMode.sp;
+        if (typeof obj.tagByMode.dp === 'string') state.tagByMode.dp = obj.tagByMode.dp;
+      }
+      if (typeof obj.spOpt === 'string') state.spOpt = obj.spOpt;
+      if (typeof obj.dpOpt === 'string') state.dpOpt = obj.dpOpt;
+      if (typeof obj.lampFilter === 'string') state.lampFilter = obj.lampFilter;
+      if (typeof obj.sortCol === 'string' && obj.sortCol.trim()) state.sortCol = obj.sortCol;
+      if (obj.sortDir === 1 || obj.sortDir === -1) state.sortDir = obj.sortDir;
+      if (validCsvSec.has(obj.csvSectionTab)) state.csvSectionTab = obj.csvSectionTab;
+      if (validCoachTab.has(obj.csvCoachTab)) state.csvCoachTab = obj.csvCoachTab;
+      if (validGauges.has(obj.csvTargetGauge)) state.csvTargetGauge = obj.csvTargetGauge;
+      if (typeof obj.csvTargetGaugeManual === 'boolean') state.csvTargetGaugeManual = obj.csvTargetGaugeManual;
+      if (Number.isInteger(obj.csvTargetLevel) && obj.csvTargetLevel >= 0 && obj.csvTargetLevel <= 12) {
+        state.csvTargetLevel = obj.csvTargetLevel;
+      }
+      if (obj.levelsByMode) {
+        applySavedLevelsObj(obj.levelsByMode, obj.levelMulti);
+      } else if (typeof obj.levelMulti === 'boolean') {
         state.levelMulti = obj.levelMulti;
       }
     } catch (_) {}
@@ -253,7 +372,7 @@
     if (activeExplorerMode() === m) {
       state.levels = new Set(clean);
     }
-    if (save) persistLevelPrefs();
+    if (save) persistUiPrefs();
   }
 
   function getUserRecord(mode, chartId) {
@@ -557,18 +676,30 @@
 
     const optBtn = document.getElementById('v-btn-opt');
     optBtn.innerHTML = `<span class="lbl-full">${isDp ? 'DP 选项减负榜' : 'SP 选项减负榜'}</span><span class="lbl-short">选项榜</span>`;
-    document.getElementById('sp-opt-filter').classList.toggle('hidden', isDp);
-    document.getElementById('dp-opt-filter').classList.toggle('hidden', !isDp);
+    const spOptSel = document.getElementById('sp-opt-filter');
+    const dpOptSel = document.getElementById('dp-opt-filter');
+    spOptSel.classList.toggle('hidden', isDp);
+    dpOptSel.classList.toggle('hidden', !isDp);
+    spOptSel.value = state.spOpt;
+    if (spOptSel.selectedIndex < 0) { state.spOpt = 'ALL'; spOptSel.value = 'ALL'; }
+    dpOptSel.value = state.dpOpt;
+    if (dpOptSel.selectedIndex < 0) { state.dpOpt = 'ALL'; dpOptSel.value = 'ALL'; }
 
     const hasLampData = !!(state.csvReport && state.csvReport.mode === mode);
     const lampSel = document.getElementById('lamp-filter');
     lampSel.classList.toggle('hidden', !hasLampData);
-    if (!hasLampData) { state.lampFilter = 'ALL'; lampSel.value = 'ALL'; }
+    lampSel.value = state.lampFilter;
+    if (lampSel.selectedIndex < 0) { state.lampFilter = 'ALL'; lampSel.value = 'ALL'; }
 
     const sel = document.getElementById('tag-filter');
+    state.tag = state.tagByMode[mode] || 'ALL';
     sel.innerHTML = TAG_OPTS[mode].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
     sel.value = state.tag;
-    if (sel.selectedIndex < 0) { state.tag = 'ALL'; sel.value = 'ALL'; }
+    if (sel.selectedIndex < 0) {
+      state.tag = 'ALL';
+      state.tagByMode[mode] = 'ALL';
+      sel.value = 'ALL';
+    }
 
     document.querySelectorAll('.v-btn').forEach((b) => {
       b.className = 'v-btn' + (b.dataset.v === state.view ? ' active' : '');
@@ -955,6 +1086,7 @@
       state.cpMax = hi >= dMax - 1e-6 ? null : hi;
       state.tablePage = 1;
       state.expandedGroups.clear();
+      persistUiPrefs();
       const filtered = applyCpRangeFilter(cpDomain.preCpList);
       updateCpRangeVisuals(filtered.length);
       scheduleCpLiveUpdate();
@@ -996,6 +1128,7 @@
       btn.addEventListener('click', () => {
         state.multiBoardGroup = btn.dataset.mgrp;
         state.expandedGroups.clear();
+        persistUiPrefs();
         const filtered = applyCpRangeFilter(cpDomain.preCpList);
         updateCpRangeVisuals(filtered.length);
         renderMainView(filtered);
@@ -1013,6 +1146,7 @@
       resetCpRange();
       state.tablePage = 1;
       state.expandedGroups.clear();
+      persistUiPrefs();
       const filtered = applyCpRangeFilter(cpDomain.preCpList);
       updateCpRangeVisuals(filtered.length);
       scheduleCpLiveUpdate();
@@ -1533,6 +1667,7 @@
         if (state.sortCol === k) state.sortDir *= -1;
         else { state.sortCol = k; state.sortDir = -1; }
         state.tablePage = 1;
+        persistUiPrefs();
         renderTable(list);
       });
     });
@@ -2127,6 +2262,7 @@
       state.csvMode = mode;
       state.csvParsed = parsed;
       state.csvTargetGaugeManual = false;
+      state.csvTargetLevel = 0;
       state.csvError = null;
       recomputeCsvReport();
 
@@ -2836,6 +2972,8 @@
     });
     document.getElementById('btn-jump-explorer')?.addEventListener('click', () => {
       state.tab = rep.mode;
+      state.lastExplorerMode = rep.mode;
+      state.tag = state.tagByMode[rep.mode] || 'ALL';
       if (state.levelsSourceByMode[rep.mode] === 'default') {
         setModeLevels(rep.mode, getCsvFocusLevels(rep), 'csv');
       } else {
@@ -2877,6 +3015,7 @@
         if (nextMode !== state.csvMode) {
           state.csvMode = nextMode;
           state.csvTargetGaugeManual = false;
+          state.csvTargetLevel = 0;
           recomputeCsvReport();
           if (state.csvReport && state.levelsSourceByMode[state.csvMode] !== 'user') {
             setModeLevels(state.csvMode, getCsvFocusLevels(state.csvReport), 'csv');
@@ -2894,6 +3033,8 @@
     const jumpToLv = (lv) => {
       hideLampTooltip();
       state.tab = rep.mode;
+      state.lastExplorerMode = rep.mode;
+      state.tag = state.tagByMode[rep.mode] || 'ALL';
       setModeLevels(rep.mode, [lv], 'user');
       state.tiers.clear();
       resetCpRange();
@@ -3011,6 +3152,7 @@
         });
       }
     });
+    persistUiPrefs();
   }
 
   let lampTooltipEl = null;
@@ -3053,6 +3195,7 @@
     if (state.tab === 'csv') {
       renderCsvWorkspace();
       syncMobileFab();
+      persistUiPrefs();
       return;
     }
 
@@ -3076,6 +3219,7 @@
     renderMainView(list);
     renderInspector();
     syncMobileFab();
+    persistUiPrefs();
   }
 
   function bindGlobalEvents() {
@@ -3093,29 +3237,34 @@
       try { localStorage.setItem(THEME_STORAGE_KEY, isLight ? 'light' : 'dark'); } catch (_) {}
     });
 
-    // Mode Tabs
-    document.querySelectorAll('.mode-tab').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const prev = state.tab;
-        const next = btn.dataset.mode;
-        state.tab = next;
-        state.selectedId = null;
-        if ((next === 'sp' || next === 'dp') && prev !== next) {
-          state.levels = new Set(state.levelsByMode[next]);
-          state.tag = 'ALL';
-          state.spOpt = 'ALL';
-          state.dpOpt = 'ALL';
-          state.lampFilter = 'ALL';
+    // Mode Tabs & Hash Navigation
+    const switchTopTab = (next, updateHash) => {
+      if (next !== 'sp' && next !== 'dp' && next !== 'csv') return;
+      const prev = state.tab;
+      state.tab = next;
+      state.selectedId = null;
+      if ((next === 'sp' || next === 'dp') && prev !== next) {
+        const switchedExplorerMode = state.lastExplorerMode !== next;
+        state.lastExplorerMode = next;
+        state.levels = new Set(state.levelsByMode[next]);
+        state.tag = state.tagByMode[next] || 'ALL';
+        if (switchedExplorerMode) {
           state.tiers.clear();
           resetCpRange();
-          document.getElementById('sp-opt-filter').value = 'ALL';
-          document.getElementById('dp-opt-filter').value = 'ALL';
-          document.getElementById('lamp-filter').value = 'ALL';
-          state.tablePage = 1;
         }
-        history.replaceState(null, '', '#' + next);
-        renderAll();
-      });
+        state.tablePage = 1;
+      }
+      if (updateHash) history.replaceState(null, '', '#' + next);
+      renderAll();
+    };
+    document.querySelectorAll('.mode-tab').forEach((btn) => {
+      btn.addEventListener('click', () => switchTopTab(btn.dataset.mode, true));
+    });
+    window.addEventListener('hashchange', () => {
+      const h = location.hash.replace(/^#/, '');
+      if ((h === 'sp' || h === 'dp' || h === 'csv') && h !== state.tab) {
+        switchTopTab(h, false);
+      }
     });
 
     // Quick Import button & file input
@@ -3180,7 +3329,12 @@
     });
 
     // Dropdowns & Search
-    document.getElementById('tag-filter').addEventListener('change', (e) => { state.tag = e.target.value; state.tablePage = 1; renderAll(); });
+    document.getElementById('tag-filter').addEventListener('change', (e) => {
+      state.tag = e.target.value;
+      state.tagByMode[activeExplorerMode()] = state.tag;
+      state.tablePage = 1;
+      renderAll();
+    });
     document.getElementById('sp-opt-filter').addEventListener('change', (e) => { state.spOpt = e.target.value; state.tablePage = 1; renderAll(); });
     document.getElementById('dp-opt-filter').addEventListener('change', (e) => { state.dpOpt = e.target.value; state.tablePage = 1; renderAll(); });
     document.getElementById('lamp-filter').addEventListener('change', (e) => { state.lampFilter = e.target.value; state.tablePage = 1; renderAll(); });
@@ -3257,7 +3411,7 @@
         state.spStyle = savedStyle;
       }
     } catch (_) {}
-    loadLevelPrefs();
+
     VER_INFO = P.vers.map((name, idx) => ({
       idx,
       code: (P.verCodes && P.verCodes[idx]) || String(idx + 1).padStart(2, '0'),
@@ -3267,6 +3421,8 @@
     DATASETS.dp = unpackCharts(P.dp, 'dp');
     CHART_BY_ID.sp = new Map(DATASETS.sp.map((c) => [c.id, c]));
     CHART_BY_ID.dp = new Map(DATASETS.dp.map((c) => [c.id, c]));
+
+    loadUiPrefs();
 
     document.getElementById('nav-sp-cnt').textContent = P.meta.spTotal.toLocaleString() + ' 谱';
     document.getElementById('nav-dp-cnt').textContent = P.meta.dpTotal.toLocaleString() + ' 谱';
@@ -3284,15 +3440,22 @@
           state.csvParsed = A.parseKonamiCsv(obj.text, state.csvFilename);
           recomputeCsvReport();
           if (state.csvReport && state.levelsSourceByMode[state.csvMode] === 'default') {
-            setModeLevels(state.csvMode, getCsvFocusLevels(state.csvReport), 'csv');
+            setModeLevels(state.csvMode, getCsvFocusLevels(state.csvReport), 'csv', false);
           }
         }
       }
     } catch (_) {}
 
-    state.levels = new Set(state.levelsByMode[activeExplorerMode()]);
+    const activeMode = activeExplorerMode();
+    if (state.tab === 'sp' || state.tab === 'dp') {
+      state.lastExplorerMode = state.tab;
+    }
+    state.levels = new Set(state.levelsByMode[activeMode]);
+    state.tag = state.tagByMode[activeMode] || 'ALL';
+
     document.getElementById('boot-loader').classList.add('hidden');
     bindGlobalEvents();
+    prefsRestored = true;
     renderAll();
   }
 
