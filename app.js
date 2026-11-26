@@ -5743,7 +5743,7 @@
       return;
     }
     try {
-      const res = await fetch('./data.json');
+      const res = await fetch(window.__IIDX_DATA_URL__ || './data.json');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const payload = await res.json();
       initWithPayload(payload);
